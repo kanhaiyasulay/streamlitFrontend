@@ -2,5 +2,9 @@
     "kanhaiya": {
         "name": "kanhaiya",
         "password": "$2b$12$tVo6e3zMpk3Hwb4f89l5xOxppLVytGTEbfim8H6z9VZLr4fXmQ7Ie"
+    },
+    "kan": {
+        "name": "kan",
+        "password": "$2b$12$IHMCPnoeU3v8RxFcyt0PzOgNEzPEBhJqdmy4LWZm.jlDpAbWllGaa"
     }
 }
