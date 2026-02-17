@@ -1,11 +1,15 @@
-Hi Guys,
-    We had a chat with GSS-IT today and they have agreed on enabling MCP servers to connect to the semantic model.
-We have been asked though to test it first on non premium capacity workspace.
+Thanks for moving the model to the test workspace.
 
-I have moved the model to our test workspace. You can find it here: Power BI
+Since the PowerBI-COE service principal already has access, could you please share the authentication details for that App Registration so I can generate the OAuth token from the code?
 
-WorkspaceId: f3dbf6fa-62fd-416b-a489-0837030755b5
-DatasetId: 017cc367-1faf-4fcf-ac41-122a6a665e6d
+Specifically, I need:
 
-The PowerBI-COE service principal have already access to that workspace as a Contributor.
+Client ID (Application ID)
 
+Client Secret (or a new secret if one is not available)
+
+Tenant ID confirmation (for completeness)
+
+I will use these to authenticate against the Fabric MCP endpoint and test connectivity to the provided WorkspaceId/DatasetId.
+
+Thanks!
