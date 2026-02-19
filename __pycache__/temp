@@ -6,31 +6,30 @@ from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
-from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
 # Fix SSL issues in corporate environments
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
+
 def get_azure_access_token():
     """
-    Generates Azure AD token using Service Principal.
-    Will work once CLIENT_ID + SECRET are available.
+    Generates Azure AD token using Service Principal
     """
 
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
 
-    if "waiting" in (tenant, client_id, client_secret):
-        raise ValueError("Azure credentials not configured yet.")
+    if not tenant or not client_id or not client_secret:
+        raise ValueError("Azure credentials missing in .env")
 
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
     payload = {
-        "client_id": os.getenv("AZURE_CLIENT_ID"),
-        "client_secret": os.getenv("AZURE_CLIENT_SECRET"),
+        "client_id": client_id,
+        "client_secret": client_secret,
         "scope": "https://analysis.windows.net/powerbi/api/.default",
         "grant_type": "client_credentials",
     }
@@ -38,12 +37,16 @@ def get_azure_access_token():
     response = requests.post(url, data=payload)
     response.raise_for_status()
 
-    return response.json()["access_token"]
+    token = response.json()["access_token"]
+    print("✅ Azure token generated successfully")
+    return token
+
 
 async def main():
-    print("Generating Azure access token...")
+    print("🔐 Generating Azure access token...")
     token = get_azure_access_token()
 
+    # Connect to Fabric MCP Endpoint
     servers = {
         "powerbi-remote": {
             "transport": "http",
@@ -54,12 +57,13 @@ async def main():
         }
     }
 
-    print("Connecting to MCP server...")
+    print("🔌 Connecting to MCP server...")
     client = MultiServerMCPClient(servers)
+
     tools = await client.get_tools()
+    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    print(f"Discovered {len(tools)} MCP tools")
-
+    # Initialize LLM
     model = init_chat_model(
         os.getenv("MODEL"),
         model_provider="openai",
@@ -67,35 +71,39 @@ async def main():
         base_url=os.getenv("ENDPOINT"),
     )
 
-    # system prompt for the agent (create_agent expects a simple system prompt)
-    system_prompt = "You are a FinOps analyst querying Power BI semantic models."
+    system_prompt = """
+    You are a FinOps analyst working with Power BI semantic models through MCP.
+    Always use available MCP tools to inspect datasets instead of guessing.
+    """
 
-    # create a compiled agent graph using the newer LangChain API
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=True)
 
-    query = "Fetch the semantic model schema and describe all tables and measures."
+    # 🔴 IMPORTANT — provide actual IDs here
+    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    # create_agent expects inputs in the messages format
+    query = f"""
+    Inspect this Power BI semantic model using MCP tools.
+
+    Workspace ID: {workspace_id}
+    Dataset ID: {dataset_id}
+
+    Return:
+    - List of all tables
+    - Columns in each table
+    - All measures with expressions
+    - Relationships
+    - Short explanation of schema (for FinOps understanding)
+    """
+
     inputs = {"messages": [{"role": "user", "content": query}]}
 
-    # invoke the agent graph asynchronously
+    print("📊 Fetching semantic model schema...")
     result = await agent_graph.ainvoke(inputs)
 
-    # result is typically a dict with output channels; print the full result
+    print("\n================ RESULT ================\n")
     print(result)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-Generating Azure access token...
-Connecting to MCP server...
-Discovered 3 MCP tools
-[values] {'messages': [HumanMessage(content='Fetch the semantic model schema and describe all tables and measures.', additional_kwargs={}, response_metadata={}, id='-c91a-...483969a')]}
-[updates] {'model': {'messages': [AIMessage(content="To proceed with your request, please provide the GUID of the artifact (semantic model or report) you'd like me to fetch the schema for.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 30, 'prompt_tokens': 1136, 'total_tokens': 1166, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-D....Y4jnh2i03J34fTK', 'finish_reason': 'stop', 'logprobs': None}, id='lc_r....69-72c3-a206-c537f6d5741e-0', tool_calls=[], invalid_tool_calls=[], usage_metadata={'input_tokens': 1136, 'output_tokens': 30, 'total_tokens': 1166, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}}
-[values] {'messages': [HumanMessage(content='Fetch the semantic model schema and describe all tables and measures.', additional_kwargs={}, response_metadata={}, id='f0425f1b-c91a-414c-acc8-21851483969a'), AIMessage(content="To proceed with your request, please provide the GUID of the artifact (semantic model or report) you'd like me to fetch the schema for.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 30, 'prompt_tokens': 1136, 'total_tokens': 1166, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DAp4WSn2WErqKTY4jnh2i03J34fTK', 'finish_reason': 'stop', 'logprobs': None}, id='lc_run--...-0', tool_calls=[], invalid_tool_calls=[], usage_metadata={'input_tokens': 1136, 'output_tokens': 30, 'total_tokens': 1166, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}  
-{'messages': [HumanMessage(content='Fetch the semantic model schema and describe all tables and measures.', additional_kwargs={}, response_metadata={}, id='f04...483969a'), AIMessage(content="To proceed with your request, please provide the GUID of the artifact (semantic model or report) you'd like me to fetch the schema for.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 30, 'prompt_tokens': 1136, 'total_tokens': 1166, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'cha...03J34fTK', 'finish_reason': 'stop', 'logprobs': None}, id='lc_run--019c73f5-1b69-72c3-a206-c537f6d5741e-0', tool_calls=[], invalid_tool_calls=[], usage_metadata={'input_tokens': 1136, 'output_tokens': 30, 'total_tokens': 1166, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}
-(mcp-help) PS C:\Users\KANSUL\mcp-help> 
