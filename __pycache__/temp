@@ -1,109 +1,87 @@
-import os
-import asyncio
-import certifi
-import requests
-from dotenv import load_dotenv
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
-
-load_dotenv()
-
-# Fix SSL issues in corporate environments
-os.environ["SSL_CERT_FILE"] = certifi.where()
-
-
-def get_azure_access_token():
-    """
-    Generates Azure AD token using Service Principal
-    """
-
-    tenant = os.getenv("AZURE_TENANT_ID")
-    client_id = os.getenv("AZURE_CLIENT_ID")
-    client_secret = os.getenv("AZURE_CLIENT_SECRET")
-
-    if not tenant or not client_id or not client_secret:
-        raise ValueError("Azure credentials missing in .env")
-
-    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
-
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": "https://analysis.windows.net/powerbi/api/.default",
-        "grant_type": "client_credentials",
-    }
-
-    response = requests.post(url, data=payload)
-    response.raise_for_status()
-
-    token = response.json()["access_token"]
-    print("✅ Azure token generated successfully")
-    return token
-
-
-async def main():
-    print("🔐 Generating Azure access token...")
-    token = get_azure_access_token()
-
-    # Connect to Fabric MCP Endpoint
-    servers = {
-        "powerbi-remote": {
-            "transport": "http",
-            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
-        }
-    }
-
-    print("🔌 Connecting to MCP server...")
-    client = MultiServerMCPClient(servers)
-
-    tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
-
-    # Initialize LLM
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
-
-    system_prompt = """
-    You are a FinOps analyst working with Power BI semantic models through MCP.
-    Always use available MCP tools to inspect datasets instead of guessing.
-    """
-
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=True)
-
-    # 🔴 IMPORTANT — provide actual IDs here
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
-
-    query = f"""
-    Inspect this Power BI semantic model using MCP tools.
-
-    Workspace ID: {workspace_id}
-    Dataset ID: {dataset_id}
-
-    Return:
-    - List of all tables
-    - Columns in each table
-    - All measures with expressions
-    - Relationships
-    - Short explanation of schema (for FinOps understanding)
-    """
-
-    inputs = {"messages": [{"role": "user", "content": query}]}
-
-    print("📊 Fetching semantic model schema...")
-    result = await agent_graph.ainvoke(inputs)
-
-    print("\n================ RESULT ================\n")
-    print(result)
-
-
-if __name__ == "__main__":
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Discovered 3 MCP tools
+📊 Fetching semantic model schema...
+[values] {'messages': [HumanMessage(content='\n    Inspect this Power BI semantic model using MCP tools.\n\n    Workspace ID: f3dbf6fa-62fd-416b-a489-0837030755b5\n    Dataset ID: 017cc367-1faf-4fcf-ac41-122a6a665e6d\n\n    Return:\n    - List of all tables\n    - Columns in each table\n    - All measures with expressions\n    - Relationships\n    - Short explanation of schema (for FinOps understanding)\n    ', additional_kwargs={}, response_metadata={}, id='fac4d78d-16b2-480f-8c7c-1241170f9be2')]}
+[updates] {'model': {'messages': [AIMessage(content='', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 38, 'prompt_tokens': 1249, 'total_tokens': 1287, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 1152}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DApJ8N4WCKgeuaEM65ZQSrQZwSYQf', 'finish_reason': 'tool_calls', 'logprobs': None}, id='lc_run--019c7402-f865-7592-a24d-98cdd005b64c-0', tool_calls=[{'name': 'GetSemanticModelSchema', 'args': {'artifactId': '017cc367-1faf-4fcf-ac41-122a6a665e6d'}, 'id': 'call_JkBl3VgiSR75eUEStIJJI1wp', 'type': 'tool_call'}], invalid_tool_calls=[], usage_metadata={'input_tokens': 1249, 'output_tokens': 38, 'total_tokens': 1287, 'input_token_details': {'audio': 0, 'cache_read': 1152}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}}
+[values] {'messages': [HumanMessage(content='\n    Inspect this Power BI semantic model using MCP tools.\n\n    Workspace ID: f3dbf6fa-62fd-416b-a489-0837030755b5\n    Dataset ID: 017cc367-1faf-4fcf-ac41-122a6a665e6d\n\n    Return:\n    - List of all tables\n    - Columns in each table\n    - All measures with expressions\n    - Relationships\n    - Short explanation of schema (for FinOps understanding)\n    ', additional_kwargs={}, response_metadata={}, id='fac4d78d-16b2-480f-8c7c-1241170f9be2'), AIMessage(content='', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 38, 'prompt_tokens': 1249, 'total_tokens': 1287, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 1152}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DApJ8N4WCKgeuaEM65ZQSrQZwSYQf', 'finish_reason': 'tool_calls', 'logprobs': None}, id='lc_run--019c7402-f865-7592-a24d-98cdd005b64c-0', tool_calls=[{'name': 'GetSemanticModelSchema', 'args': {'artifactId': '017cc367-1faf-4fcf-ac41-122a6a665e6d'}, 'id': 'call_JkBl3VgiSR75eUEStIJJI1wp', 'type': 'tool_call'}], invalid_tool_calls=[], usage_metadata={'input_tokens': 1249, 'output_tokens': 38, 'total_tokens': 1287, 'input_token_details': {'audio': 0, 'cache_read': 1152}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}
+Traceback (most recent call last):
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 109, in <module>
     asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 102, in main
+    result = await agent_graph.ainvoke(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3161, in ainvoke
+    async for chunk in self.astream(
+    ...<29 lines>...
+            chunks.append(chunk)
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2974, in astream
+    async for _ in runner.atick(
+    ...<13 lines>...
+            yield o
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 304, in atick
+    await arun_with_retry(
+    ...<15 lines>...
+    )
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 138, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 705, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        step.ainvoke(input, config, **kwargs), context=context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 473, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 846, in _afunc
+    outputs = await asyncio.gather(*coros)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 1177, in _arun_one
+    return await self._execute_tool_async(tool_request, input_type, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 1126, in _execute_tool_async
+    content = _handle_tool_error(e, flag=self._handle_tool_errors)
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 430, in _handle_tool_error
+    content = flag(e)  # type: ignore [assignment, call-arg]
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 387, in _default_handle_tool_errors
+    raise e
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langgraph\prebuilt\tool_node.py", line 1083, in _execute_tool_async
+    response = await tool.ainvoke(call_args, config)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\tools\structured.py", line 70, in ainvoke
+    return await super().ainvoke(input, config, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\tools\base.py", line 652, in ainvoke
+    return await self.arun(tool_input, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\tools\base.py", line 1130, in arun
+    raise error_to_raise
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\tools\base.py", line 1096, in arun
+    response = await coro_with_context(coro, context)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\tools\structured.py", line 124, in _arun
+    return await self.coroutine(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_mcp_adapters\tools.py", line 414, in call_tool
+    return _convert_call_tool_result(call_tool_result)
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_mcp_adapters\tools.py", line 189, in _convert_call_tool_result
+    raise ToolException(error_msg)
+langchain_core.tools.base.ToolException: An error occurred invoking 'GetSemanticModelSchema': Failed to retrieve semantic model schema. {"Message":"Something went wrong. RLS is enabled for this model. Username is required, Empty Roles treated as full-access."}. RootActivityId: 3376075b-76ea-4ce3-9e29-ccf8a4c0b5d8.     
+During task with name 'tools' and id '6ea62597-c750-47de-7405-13f99ec02554'
+(mcp-help) PS C:\Users\KANSUL\mcp-help> 
