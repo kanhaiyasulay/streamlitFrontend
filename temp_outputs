@@ -1,87 +1,24 @@
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-🔐 Generating Azure access token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected to MCP. Discovered 3 tools
+Hello Team,
 
-🛠 Available MCP Tools:
- - ExecuteQuery
- - GenerateQuery
- - GetSemanticModelSchema
+I’m integrating with a Power BI Semantic Model via Microsoft Fabric MCP (Model Context Protocol).
+Authentication and workspace-level permissions are already configured, and the Service Principal has access to the workspace.
 
-📊 Inspecting semantic model via MCP...
+However, MCP is unable to retrieve the semantic model metadata (schema calls return empty).
+This typically occurs when the XMLA endpoint is not enabled at the capacity level.
 
-Traceback (most recent call last):
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 151, in <module>
-    asyncio.run(main())
-    ~~~~~~~~~~~^^^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
-    return runner.run(main)
-           ~~~~~~~~~~^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
-    return self._loop.run_until_complete(task)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
-    return future.result()
-           ~~~~~~~~~~~~~^^
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 144, in main
-    result = await run_mcp_reasoning(model_with_tools, tool_map, messages)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 48, in run_mcp_reasoning
-    response = await model_with_tools.ainvoke(messages)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
-    return await self.bound.ainvoke(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<3 lines>...
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 425, in ainvoke
-    llm_result = await self.agenerate_prompt(
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<8 lines>...
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1132, in agenerate_prompt
-    return await self.agenerate(
-           ^^^^^^^^^^^^^^^^^^^^^
-        prompt_messages, stop=stop, callbacks=callbacks, **kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1090, in agenerate
-    raise exceptions[0]
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1359, in _agenerate_with_cache
-    result = await self._agenerate(
-             ^^^^^^^^^^^^^^^^^^^^^^
-        messages, stop=stop, run_manager=run_manager, **kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1671, in _agenerate
-    _handle_openai_bad_request(e)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1666, in _agenerate
-    raw_response = await self.async_client.with_raw_response.create(
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        **payload
-        ^^^^^^^^^
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\openai\_legacy_response.py", line 381, in wrapped
-    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
-                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 2676, in create
-    return await self._post(
-           ^^^^^^^^^^^^^^^^^
-    ...<49 lines>...
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\openai\_base_client.py", line 1884, in post
-    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\openai\_base_client.py", line 1669, in request
-    raise self._make_status_error_from_response(err.response) from None
-openai.BadRequestError: Error code: 400 - {'error': {'message': "The response was filtered due to the prompt triggering Azure OpenAI's content management policy. Please modify your prompt and retry. To learn more about our content filtering policies please read our documentation: https://go.microsoft.com/fwlink/?linkid=2198766", 'type': None, 'param': 'prompt', 'code': 'content_filter', 'status': 400, 'innererror': {'code': 'ResponsibleAIPolicyViolation', 'content_filter_result': {'hate': {'filtered': False, 'severity': 'safe'}, 'jailbreak': {'detected': True, 'filtered': True}, 'self_harm': {'filtered': False, 'severity': 'safe'}, 'sexual': {'filtered': False, 'severity': 'safe'}, 'violence': {'filtered': False, 'severity': 'safe'}}}}}
+Could you please verify and enable the following setting on the Fabric/Power BI capacity hosting this workspace:
+
+Capacity Settings → XMLA Endpoint
+
+* Set XMLA Endpoint to **Read Only** (Read/Write is also fine)
+
+This is required because MCP accesses the semantic model through the Analysis Services (XMLA) interface rather than standard REST APIs.
+
+Details:
+
+* Workspace ID: <your-workspace-id>
+* Dataset / Semantic Model ID: <your-dataset-id>
+* Access Type: Service Principal (App-based authentication)
+* Use Case: Programmatic schema discovery and query execution via Fabric MCP
+
+Please let me know if any additional information is needed.
