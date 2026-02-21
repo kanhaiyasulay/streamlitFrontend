@@ -54,7 +54,7 @@ def classify_intent(question: str) -> str:
 
 
 # -----------------------------
-# PRINT SCHEMA (ONLY WHEN ASKED)
+# PRINT SCHEMA
 # -----------------------------
 def print_schema(schema):
     print("\n================ DATASET SCHEMA ================\n")
@@ -67,7 +67,30 @@ def print_schema(schema):
 
 
 # -----------------------------
-# MAIN EXECUTION (NO AGENT)
+# BUILD FOCUSED SCHEMA FOR QUERY GENERATION
+# -----------------------------
+def build_schema_selection(full_schema):
+    """
+    Only send relevant tables to MCP query generator.
+    This prevents overloading the query planner.
+    """
+
+    relevant_tables = ["cost", "calendar", "resources"]
+
+    tables = []
+    for t in full_schema["Tables"]:
+        if t["Name"] in relevant_tables:
+            tables.append({
+                "name": t["Name"],
+                "columns": [c["Name"] for c in t["Columns"]],
+                "measures": []
+            })
+
+    return {"tables": tables}
+
+
+# -----------------------------
+# MAIN EXECUTION
 # -----------------------------
 async def main():
 
@@ -99,12 +122,7 @@ async def main():
     tools = await client.get_tools()
     tool_map = {tool.name: tool for tool in tools}
 
-    print(f"✅ Connected. Available tools: {list(tool_map.keys())}")
-
-    for t in tools:
-        print("Tool: ", t.name)
-        print("Schema: ", t.args_schema)
-        print("------------------------------")
+    print(f"✅ Connected. Tools available: {list(tool_map.keys())}")
 
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
@@ -113,13 +131,13 @@ async def main():
     # -----------------------------
     if intent == "schema":
         try:
-            tool = tool_map["GetSemanticModelSchema"]
+            schema_tool = tool_map["GetSemanticModelSchema"]
 
-            result = await tool.ainvoke({
+            schema_result = await schema_tool.ainvoke({
                 "artifactId": dataset_id
             })
 
-            schema = result["structured_content"]
+            schema = schema_result.artifact["structured_content"]
             print_schema(schema)
 
         except Exception:
@@ -128,22 +146,46 @@ async def main():
         return
 
     # -----------------------------
-    # COST REQUEST (QUERY)
+    # COST REQUEST (FULL MCP PIPELINE)
     # -----------------------------
     if intent == "cost":
         try:
-            tool = tool_map["ExecuteQuery"]  # MCP generates DAX internally
+            # STEP 1 — Fetch Schema
+            schema_tool = tool_map["GetSemanticModelSchema"]
+            schema_result = await schema_tool.ainvoke({
+                "artifactId": dataset_id
+            })
 
-            result = await tool.ainvoke({
+            full_schema = schema_result.artifact["structured_content"]
+
+            # STEP 2 — Build Schema Context for MCP
+            schema_selection = build_schema_selection(full_schema)
+
+            # STEP 3 — Generate DAX from NL Question
+            generate_tool = tool_map["GenerateQuery"]
+            dax_result = await generate_tool.ainvoke({
                 "artifactId": dataset_id,
-                "query": user_question
+                "userInput": user_question,
+                "schemaSelection": schema_selection
+            })
+
+            dax_query = dax_result.artifact["query"]
+
+            print("\n🧠 Generated DAX:\n")
+            print(dax_query)
+
+            # STEP 4 — Execute Query
+            execute_tool = tool_map["ExecuteQuery"]
+            data_result = await execute_tool.ainvoke({
+                "artifactId": dataset_id,
+                "daxQuery": dax_query
             })
 
             print("\n📊 Query Result:\n")
-            print(result)
+            print(data_result.artifact)
 
         except Exception:
-            # STRICT behavior: do NOT fallback
+            # STRICT — no fallback allowed
             print("[]")
 
         return
@@ -154,27 +196,3 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-
-after running this above code:
-
-
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-
-Ask your question: Fetch schema
-🔎 Detected intent: schema
-🔐 Generating Azure access token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected. Available tools: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
-Tool:  ExecuteQuery
-Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to execute Dax query against.', 'type': 'string'}, 'daxQuery': {'description': 'The DAX query to execute against the underlying Power BI semantic model.', 'type': 'string'}, 'maxRows': {'description': 'The maximum number of rows to return (optional, default: 250, max: 1000)', 'type': ['integer', 'null'], 'default': None}}, 'required': ['artifactId', 'daxQuery']}
-------------------------------
-Tool:  GenerateQuery
-Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to generate the Dax query on.', 'type': 'string'}, 'userInput': {'description': "The user's input for which the DAX query should be generated. This will be used to understand the intent and focus of the query.", 'type': 'string'}, 'schemaSelection': {'description': "Schema context containing the relevant tables, columns, and measures needed to answer the question. Include related tables that might be needed for joins or context, key columns for filtering/grouping, and measures for calculations. It's better to include slightly more than needed rather than too little.", 'type': 'object', 'properties': {'tables': {'description': "Array of tables that contain data relevant to the user's question. You must include tables that will be used in the DAX query.", 'type': ['array', 'null'], 'items': {'type': 'object', 'properties': {'name': {'description': 'Name of the table that contains relevant data', 'type': ['string', 'null']}, 'columns': {'description': "Column names from this table that are needed to answer the user's question. You must include columns that will be referenced in the DAX query or are needed for filtering/grouping.", 'type': ['array', 'null'], 'items': {'type': 'string'}}, 'measures': {'description': "Measure names from this table that are needed to answer the user's question. You must include measures that will be used in calculations or aggregations.", 'type': ['array', 'null'], 'items': {'type': 'string'}}}}}}}, 'chatHistory': {'description': "Optional chat history to provide context for the DAX generation. This should include user questions and assistant responses containing DAX queries. Use 'user' role for business questions and 'assistant' role for the corresponding DAX queries that were generated. This allows the DAX generation to understand what queries were previously generated and build upon them appropriately.", 'type': 'array', 'items': {'type': 'object', 'properties': {'role': {'description': "The role of the message author. Use 'user' for business questions and 'assistant' for DAX query responses.", 'type': 'string', 'enum': ['System', 'User', 'Assistant', 'Tool', 'Developer']}, 'content': {'description': 'The content of the message. For user messages, this should be the business question. For assistant messages, this should be the actual DAX query that was generated (including any comments).', 'type': ['string', 'null']}}}, 'default': None}}, 'required': ['artifactId', 'userInput', 'schemaSelection']}
-------------------------------
-Tool:  GetSemanticModelSchema
-Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to fetch the schema for.', 'type': 'string'}}, 'required': ['artifactId']}
-------------------------------
-[]
