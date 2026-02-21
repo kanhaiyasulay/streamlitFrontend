@@ -1,2 +1,11 @@
-This request is blocking development and testing of the Fabric MCP integration, which is required to enable automated querying and analysis of the Power BI semantic model for the CloudOps FinOps use case.
-Until the XMLA endpoint is enabled, the system cannot retrieve schema or execute queries, so project validation and delivery timelines are impacted.
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+Ask your question: show schema
+🔎 Detected intent: schema
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Tools available: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
+[]
