@@ -4,7 +4,7 @@ import certifi
 import requests
 from dotenv import load_dotenv
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
 
@@ -71,11 +71,12 @@ async def run_mcp_reasoning(model_with_tools, client, messages):
 
             # Send result back to LLM
             messages.append(response)
-            messages.append({
-                "role": "tool",
-                "name": tool_name,
-                "content": str(tool_result)
-            })
+            messages.append(
+                ToolMessage(
+                    content=str(tool_result),
+                    tool_call_id=call["id"],
+                )
+            )
 
 
 async def main():
