@@ -1,12 +1,11 @@
 import os
 import asyncio
 import certifi
-from git import List
 import requests
 from dotenv import load_dotenv
+
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
 
 load_dotenv()
 
@@ -18,7 +17,6 @@ def get_azure_access_token():
     """
     Generates Azure AD token using Service Principal
     """
-
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
@@ -62,9 +60,15 @@ async def main():
     client = MultiServerMCPClient(servers)
 
     tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    # Initialize LLM
+    print(f"✅ Connected to MCP. Discovered {len(tools)} tools\n")
+
+    # Print tool names so you understand what MCP exposes
+    print("🛠 Available MCP Tools:")
+    for t in tools:
+        print(" -", t.name)
+
+    # Initialize LLM (NO AGENT)
     model = init_chat_model(
         os.getenv("MODEL"),
         model_provider="openai",
@@ -72,33 +76,45 @@ async def main():
         base_url=os.getenv("ENDPOINT"),
     )
 
-    system_prompt = """
-    You are a FinOps analyst working with Power BI semantic models through MCP.
-    Always use available MCP tools to inspect datasets instead of guessing.
-    """
+    # 🔴 Bind tools directly — THIS is the key difference
+    model_with_tools = model.bind_tools(tools)
 
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=True)
-
-    # 🔴 IMPORTANT — provide actual IDs here
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    query = f"""
-    Inspect this Power BI semantic model using MCP tools.
+    if not workspace_id or not dataset_id:
+        raise ValueError("Workspace/Dataset ID missing in .env")
 
-    Workspace ID: {workspace_id}
-    Dataset ID: {dataset_id}
+    # Force MCP schema inspection first
+    user_query = f"""
+You are connected to a Power BI Semantic Model via MCP.
 
-    Return:
-    - Schma of Cost table
-    """
+You MUST use MCP tools to inspect the dataset.
 
-    inputs = {"messages": [{"role": "user", "content": query}]}
+Workspace ID: {workspace_id}
+Dataset ID: {dataset_id}
 
-    print("📊 Fetching semantic model schema...")
-    result = await agent_graph.ainvoke(inputs)
+Steps:
+1. Discover available tables
+2. Inspect table schema
+3. List measures
 
-    print("\n================ RESULT ================\n")
+DO NOT answer from knowledge.
+ONLY answer using MCP tool results.
+"""
+
+    inputs = {
+        "messages": [
+            {"role": "user", "content": user_query}
+        ]
+    }
+
+    print("\n📊 Inspecting semantic model via MCP...\n")
+
+    # Direct invocation — not an agent
+    result = await model_with_tools.ainvoke(inputs)
+
+    print("\n================ MCP RESPONSE ================\n")
     print(result)
 
 
