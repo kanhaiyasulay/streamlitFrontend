@@ -18,58 +18,7 @@ C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation
 Arguments: {'artifactId': 'bf47a12c-18e3-49b3-ad4d-8f90f282928c'}
 
 ✅ Tool Result Received (GetSemanticModelSchema)
-Traceback (most recent call last):
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 161, in <module>
-    asyncio.run(main())
-    ~~~~~~~~~~~^^^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
-    return runner.run(main)
-           ~~~~~~~~~~^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
-    return self._loop.run_until_complete(task)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
-    return future.result()
-           ~~~~~~~~~~~~~^^
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 155, in main
-    result = await run_mcp_reasoning(model_with_tools, client, messages)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 51, in run_mcp_reasoning
-    response = await model_with_tools.ainvoke(messages)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
-    return await self.bound.ainvoke(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<3 lines>...
-    )
-    ^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 426, in ainvoke
-    [self._convert_input(input)],
-     ~~~~~~~~~~~~~~~~~~~^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 381, in _convert_input
-    return ChatPromptValue(messages=convert_to_messages(model_input))
-                                    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 752, in convert_to_messages
-    return [_convert_to_message(m) for m in messages]
-            ~~~~~~~~~~~~~~~~~~~^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 724, in _convert_to_message
-    message_ = _create_message_from_message_type(
-        msg_type, msg_content, **msg_kwargs
-    )
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 662, in _create_message_from_message_type
-    message = ToolMessage(content=content, artifact=artifact, **kwargs)
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\tool.py", line 171, in __init__
-    super().__init__(content=content, **kwargs)
-    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\base.py", line 179, in __init__
-    super().__init__(content=content, **kwargs)
-    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\load\serializable.py", line 118, in __init__
-    super().__init__(*args, **kwargs)
-    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\pydantic\main.py", line 250, in __init__
-    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
-  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\tool.py", line 130, in coerce_args
-    tool_call_id = values["tool_call_id"]
-                   ~~~~~~^^^^^^^^^^^^^^^^
-KeyError: 'tool_call_id'
+
+================ MCP RESPONSE ================
+
+content="I attempted to inspect the Power BI semantic model to discover the available tables, their schema, and measures. However, the tool returned no data or schema information.\n\nIf you have any alternative dataset configurations or artifacts to verify, please share them, and I'll use the tools again." additional_kwargs={'refusal': None} response_metadata={'token_usage': {'completion_tokens': 57, 'prompt_tokens': 1306, 'total_tokens': 1363, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 1280}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DBXyxls7FXzB7YsWm9DuW2HW7EHMY', 'finish_reason': 'stop', 'logprobs': None} id='lc_run--019c7e3f-58aa-72c2-bf1e-514d91e373f7-0' tool_calls=[] invalid_tool_calls=[] usage_metadata={'input_tokens': 1306, 'output_tokens': 57, 'total_tokens': 1363, 'input_token_details': {'audio': 0, 'cache_read': 1280}, 'output_token_details': {'audio': 0, 'reasoning': 0}}
