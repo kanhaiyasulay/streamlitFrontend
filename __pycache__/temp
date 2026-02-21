@@ -4,8 +4,6 @@ import certifi
 import requests
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
 
 load_dotenv()
 
@@ -13,10 +11,10 @@ load_dotenv()
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
 def get_azure_access_token():
-    """
-    Generates Azure AD token using Service Principal
-    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
@@ -40,42 +38,51 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-def extract_mcp_schema(result):
-    """
-    Extract ONLY the MCP structured payload (ignore LangChain metadata)
-    """
-    for msg in result["messages"]:
-        if msg.type == "tool":
-            artifact = msg.artifact
-            if artifact and "structured_content" in artifact:
-                return artifact["structured_content"]
+# -----------------------------
+# INTENT CLASSIFIER (STRICT)
+# -----------------------------
+def classify_intent(question: str) -> str:
+    q = question.lower()
 
-    return None
+    if "schema" in q:
+        return "schema"
+
+    if "cost" in q or "spend" in q:
+        return "cost"
+
+    return "unknown"
 
 
+# -----------------------------
+# PRINT SCHEMA (ONLY WHEN ASKED)
+# -----------------------------
 def print_schema(schema):
-    """
-    Pretty print schema for debugging / validation
-    """
     print("\n================ DATASET SCHEMA ================\n")
 
-    print("📊 Tables:\n")
     for table in schema["Tables"]:
         print(f"📁 {table['Name']}")
         for col in table["Columns"]:
             print(f"   └─ {col['Name']} ({col['Type']})")
         print()
 
-    print("\n🔗 Relationships:\n")
-    for rel in schema["ActiveRelationships"]:
-        print(f"{rel['PK']}  --->  {rel['FK']}")
 
-
+# -----------------------------
+# MAIN EXECUTION (NO AGENT)
+# -----------------------------
 async def main():
+
+    user_question = input("\nAsk your question: ").strip()
+
+    intent = classify_intent(user_question)
+    print(f"🔎 Detected intent: {intent}")
+
+    if intent == "unknown":
+        print("[]")
+        return
+
     print("🔐 Generating Azure access token...")
     token = get_azure_access_token()
 
-    # Connect to Fabric MCP Endpoint
     servers = {
         "powerbi-remote": {
             "transport": "http",
@@ -90,170 +97,55 @@ async def main():
     client = MultiServerMCPClient(servers)
 
     tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
+    tool_map = {tool.name: tool for tool in tools}
 
-    # Initialize LLM (will be used later for reasoning)
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
+    print(f"✅ Connected. Available tools: {list(tool_map.keys())}")
 
-    system_prompt = """
-    You are a FinOps analyst working with Power BI semantic models through MCP.
-    Always use MCP tools to inspect datasets. Never assume schema.
-    """
-
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
-
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    query = f"""
-    Using the Power BI MCP tools, answer the following:
+    # -----------------------------
+    # SCHEMA REQUEST
+    # -----------------------------
+    if intent == "schema":
+        try:
+            tool = tool_map["GetSemanticModelSchema"]
 
-    What is the current total cloud cost based on the latest available data?
+            result = await tool.ainvoke({
+                "artifactId": dataset_id
+            })
 
-    Workspace ID: {workspace_id}
-    Dataset ID: {dataset_id}
-    """
+            schema = result["structured_content"]
+            print_schema(schema)
 
-    print("📊 Fetching semantic model schema...")
-    result = await agent_graph.ainvoke(
-        {"messages": [{"role": "user", "content": query}]}
-    )
+        except Exception:
+            print("[]")
 
-    # ✅ Extract REAL DATA
-    schema = extract_mcp_schema(result)
-
-    if not schema:
-        print("❌ No schema returned from MCP")
         return
 
-    print_schema(schema)
+    # -----------------------------
+    # COST REQUEST (QUERY)
+    # -----------------------------
+    if intent == "cost":
+        try:
+            tool = tool_map["ExecuteQuery"]  # MCP generates DAX internally
 
-    # You will reuse this schema for FinOps reasoning later
-    print("\n✅ MCP integration validated successfully.\n")
+            result = await tool.ainvoke({
+                "artifactId": dataset_id,
+                "query": user_question
+            })
+
+            print("\n📊 Query Result:\n")
+            print(result)
+
+        except Exception:
+            # STRICT behavior: do NOT fallback
+            print("[]")
+
+        return
 
 
+# -----------------------------
+# ENTRY POINT
+# -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-
-why the above code is giving me the same output every time
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-🔐 Generating Azure access token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected. Discovered 3 MCP tools
-📊 Fetching semantic model schema...
-
-================ DATASET SCHEMA ================
-
-📊 Tables:
-
-📁 calendar
-   └─ date (DateTime)
-   └─ year (Text)
-   └─ quarter_no (Text)
-   └─ quarter_yy_no (Text)
-   └─ month_no (Double)
-   └─ month (Text)
-   └─ month_yy_no (Text)
-   └─ week_no (Double)
-   └─ week_yy_no (Text)
-   └─ day_of_week (Text)
-   └─ month_start (DateTime)
-   └─ month_end (DateTime)
-   └─ quarter_start (DateTime)
-   └─ quarter_end (DateTime)
-
-📁 cost
-   └─ resId (Integer)
-   └─ date (DateTime)
-   └─ nok (Double)
-   └─ raw_usd (Double)
-   └─ category (Text)
-   └─ sub_category (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ kubeit (Integer)
-   └─ usd (Double)
-   └─ customer_name (Text)
-
-📁 customers
-   └─ customer_id (Text)
-   └─ customer_name (Text)
-   └─ source (Integer)
-
-📁 details
-   └─ resource_id (Integer)
-   └─ detail (Text)
-   └─ value (Text)
-   └─ startDate (DateTime)
-   └─ is_current (Integer)
-   └─ rn (Integer)
-   └─ endDate (DateTime)
-
-📁 regions
-   └─ continent (Text)
-   └─ location (Text)
-   └─ geographyId (Text)
-   └─ latitude (Text)
-   └─ longitude (Text)
-   └─ typeId (Text)
-   └─ isOpen (Text)
-   └─ hasGroundStation (Text)
-   └─ yearOpen (Text)
-   └─ dataResidency (Text)
-   └─ availableTo (Text)
-   └─ announcementLink (Text)
-   └─ productsByRegionLink (Text)
-   └─ productsByRegionLinkNonRegional (Text)
-   └─ availabilityZonesId (Text)
-   └─ id (Text)
-   └─ displayName (Text)
-
-📁 resources
-   └─ resource_id (Integer)
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ location (Text)
-   └─ resource_group (Text)
-   └─ type (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ current_state (Text)
-   └─ last_updated_time (DateTime)
-   └─ customer_name (Text)
-
-📁 subscriptions
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ management_group (Text)
-   └─ management_group_name (Text)
-
-📁 tags
-   └─ resource_id (Integer)
-   └─ product_centre (Text)
-   └─ solution_name (Text)
-   └─ environment (Text)
-   └─ project_number (Text)
-   └─ project_task (Text)
-   └─ owner (Text)
-   └─ verit-owneremail (Text)
-
-
-🔗 Relationships:
-
-'subscriptions'[subscription_id]  --->  'resources'[subscription_id]
-'tags'[resource_id]  --->  'resources'[resource_id]
-'regions'[id]  --->  'resources'[location]
-'resources'[resource_id]  --->  'tags'[resource_id]
-'resources'[resource_id]  --->  'cost'[resId]
-'calendar'[date]  --->  'cost'[date]
-'resources'[resource_id]  --->  'details'[resource_id]
-
-✅ MCP integration validated successfully.
