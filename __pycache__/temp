@@ -1,122 +1,35 @@
-import os
-import asyncio
-import certifi
-import requests
-from dotenv import load_dotenv
-
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
-
-load_dotenv()
-
-# Fix SSL issues in corporate environments
-os.environ["SSL_CERT_FILE"] = certifi.where()
-
-
-def get_azure_access_token():
+async def run_mcp_reasoning(model_with_tools, client, messages):
     """
-    Generates Azure AD token using Service Principal
+    Executes the MCP reasoning loop:
+    LLM → Tool Call → Execute → Feed Result Back → Repeat
     """
-    tenant = os.getenv("AZURE_TENANT_ID")
-    client_id = os.getenv("AZURE_CLIENT_ID")
-    client_secret = os.getenv("AZURE_CLIENT_SECRET")
 
-    if not tenant or not client_id or not client_secret:
-        raise ValueError("Azure credentials missing in .env")
+    while True:
+        response = await model_with_tools.ainvoke(messages)
 
-    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+        # If no tool calls, we are done
+        if not response.tool_calls:
+            return response
 
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": "https://analysis.windows.net/powerbi/api/.default",
-        "grant_type": "client_credentials",
-    }
+        for call in response.tool_calls:
+            tool_name = call["name"]
+            tool_args = call["args"]
 
-    response = requests.post(url, data=payload)
-    response.raise_for_status()
+            print(f"\n⚙️ Executing MCP Tool: {tool_name}")
+            print(f"Arguments: {tool_args}\n")
 
-    token = response.json()["access_token"]
-    print("✅ Azure token generated successfully")
-    return token
+            # Find the MCP tool
+            tool = next(t for t in await client.get_tools() if t.name == tool_name)
 
+            # Execute against Fabric
+            tool_result = await tool.ainvoke(tool_args)
 
-async def main():
-    print("🔐 Generating Azure access token...")
-    token = get_azure_access_token()
+            print(f"✅ Tool Result Received ({tool_name})")
 
-    # Connect to Fabric MCP Endpoint
-    servers = {
-        "powerbi-remote": {
-            "transport": "http",
-            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
-        }
-    }
-
-    print("🔌 Connecting to MCP server...")
-    client = MultiServerMCPClient(servers)
-
-    tools = await client.get_tools()
-
-    print(f"✅ Connected to MCP. Discovered {len(tools)} tools\n")
-
-    # Print tool names so you understand what MCP exposes
-    print("🛠 Available MCP Tools:")
-    for t in tools:
-        print(" -", t.name)
-
-    # Initialize LLM (NO AGENT)
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
-
-    # 🔴 Bind tools directly — THIS is the key difference
-    model_with_tools = model.bind_tools(tools)
-
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
-
-    if not workspace_id or not dataset_id:
-        raise ValueError("Workspace/Dataset ID missing in .env")
-
-    # Force MCP schema inspection first
-    user_query = f"""
-You are connected to a Power BI Semantic Model via MCP.
-
-You MUST use MCP tools to inspect the dataset.
-
-Workspace ID: {workspace_id}
-Dataset ID: {dataset_id}
-
-Steps:
-1. Discover available tables
-2. Inspect table schema
-3. List measures
-
-DO NOT answer from knowledge.
-ONLY answer using MCP tool results.
-"""
-
-    inputs = {
-        "messages": [
-            {"role": "user", "content": user_query}
-        ]
-    }
-
-    print("\n📊 Inspecting semantic model via MCP...\n")
-
-    # Direct invocation — not an agent
-    result = await model_with_tools.ainvoke(inputs)
-
-    print("\n================ MCP RESPONSE ================\n")
-    print(result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            # Send result back to LLM
+            messages.append(response)
+            messages.append({
+                "role": "tool",
+                "name": tool_name,
+                "content": str(tool_result)
+            })
