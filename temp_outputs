@@ -1,24 +1,2 @@
-Hello Team,
-
-I’m integrating with a Power BI Semantic Model via Microsoft Fabric MCP (Model Context Protocol).
-Authentication and workspace-level permissions are already configured, and the Service Principal has access to the workspace.
-
-However, MCP is unable to retrieve the semantic model metadata (schema calls return empty).
-This typically occurs when the XMLA endpoint is not enabled at the capacity level.
-
-Could you please verify and enable the following setting on the Fabric/Power BI capacity hosting this workspace:
-
-Capacity Settings → XMLA Endpoint
-
-* Set XMLA Endpoint to **Read Only** (Read/Write is also fine)
-
-This is required because MCP accesses the semantic model through the Analysis Services (XMLA) interface rather than standard REST APIs.
-
-Details:
-
-* Workspace ID: <your-workspace-id>
-* Dataset / Semantic Model ID: <your-dataset-id>
-* Access Type: Service Principal (App-based authentication)
-* Use Case: Programmatic schema discovery and query execution via Fabric MCP
-
-Please let me know if any additional information is needed.
+This request is blocking development and testing of the Fabric MCP integration, which is required to enable automated querying and analysis of the Power BI semantic model for the CloudOps FinOps use case.
+Until the XMLA endpoint is enabled, the system cannot retrieve schema or execute queries, so project validation and delivery timelines are impacted.
