@@ -1,1 +1,43 @@
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected to MCP. Discovered 3 tools
 
+🛠 Available MCP Tools:
+ - ExecuteQuery
+ - GenerateQuery
+ - GetSemanticModelSchema
+
+📊 Inspecting semantic model via MCP...
+
+Traceback (most recent call last):
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 122, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 115, in main
+    result = await model_with_tools.ainvoke(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 426, in ainvoke
+    [self._convert_input(input)],
+     ~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 386, in _convert_input
+    raise ValueError(msg)
+ValueError: Invalid input type <class 'dict'>. Must be a PromptValue, str, or list of BaseMessages.
