@@ -14,6 +14,62 @@ C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation
 📊 Inspecting semantic model via MCP...
 
 
-================ MCP RESPONSE ================
+⚙️ Executing MCP Tool: GetSemanticModelSchema
+Arguments: {'artifactId': 'bf47a12c-18e3-49b3-ad4d-8f90f282928c'}
 
-content='' additional_kwargs={'refusal': None} response_metadata={'token_usage': {'completion_tokens': 41, 'prompt_tokens': 1255, 'total_tokens': 1296, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DBXhaR6MkNBdsUYD1SVzn9JZKg9NJ', 'finish_reason': 'tool_calls', 'logprobs': None} id='lc_run--019c7e2e-e050-7e61-83e3-30198f5ffcf3-0' tool_calls=[{'name': 'GetSemanticModelSchema', 'args': {'artifactId': 'bf47a12c-18e3-49b3
+✅ Tool Result Received (GetSemanticModelSchema)
+Traceback (most recent call last):
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 161, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 155, in main
+    result = await run_mcp_reasoning(model_with_tools, client, messages)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\openAI_mcp.py", line 51, in run_mcp_reasoning
+    response = await model_with_tools.ainvoke(messages)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 426, in ainvoke
+    [self._convert_input(input)],
+     ~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 381, in _convert_input
+    return ChatPromptValue(messages=convert_to_messages(model_input))
+                                    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 752, in convert_to_messages
+    return [_convert_to_message(m) for m in messages]
+            ~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 724, in _convert_to_message
+    message_ = _create_message_from_message_type(
+        msg_type, msg_content, **msg_kwargs
+    )
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\utils.py", line 662, in _create_message_from_message_type
+    message = ToolMessage(content=content, artifact=artifact, **kwargs)
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\tool.py", line 171, in __init__
+    super().__init__(content=content, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\base.py", line 179, in __init__
+    super().__init__(content=content, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\load\serializable.py", line 118, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\pydantic\main.py", line 250, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+  File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\messages\tool.py", line 130, in coerce_args
+    tool_call_id = values["tool_call_id"]
+                   ~~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'tool_call_id'
