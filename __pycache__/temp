@@ -4,10 +4,7 @@ import certifi
 import requests
 from dotenv import load_dotenv
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
 
 load_dotenv()
 
@@ -16,6 +13,9 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
 def get_azure_access_token():
+    """
+    Generates Azure AD token using Service Principal
+    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
@@ -39,50 +39,11 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-async def run_mcp_reasoning(model_with_tools, tool_map, messages):
-    """
-    Deterministic MCP reasoning loop that preserves LangChain execution semantics.
-    """
-
-    while True:
-        response = await model_with_tools.ainvoke(messages)
-
-        # If LLM has no more tool calls, we're done
-        if not response.tool_calls:
-            return response
-
-        for call in response.tool_calls:
-            tool_name = call["name"]
-            tool_args = call["args"]
-
-            print(f"\n⚙️ Executing MCP Tool: {tool_name}")
-            print(f"Arguments: {tool_args}\n")
-
-            tool: BaseTool = tool_map[tool_name]
-
-            # IMPORTANT: this preserves MCP execution envelope
-            tool_result = await tool.ainvoke(
-                tool_args,
-                config={"run_name": "mcp_tool_execution"}
-            )
-
-            print(f"✅ Tool Result Received ({tool_name})")
-
-            # Feed result back into conversation
-            messages.append(response)
-            messages.append(
-                ToolMessage(
-                    content=str(tool_result),
-                    tool_call_id=call["id"],
-                )
-            )
-
-
 async def main():
     print("🔐 Generating Azure access token...")
     token = get_azure_access_token()
 
-    # MCP Connection
+    # Connect to Fabric MCP Endpoint
     servers = {
         "powerbi-remote": {
             "transport": "http",
@@ -95,60 +56,34 @@ async def main():
     client = MultiServerMCPClient(servers)
 
     tools = await client.get_tools()
+
     print(f"✅ Connected to MCP. Discovered {len(tools)} tools\n")
 
     print("🛠 Available MCP Tools:")
     for t in tools:
         print(" -", t.name)
 
-    # Cache tools (important for stability)
+    # Build tool map
     tool_map = {tool.name: tool for tool in tools}
 
-    # Initialize model
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
-
-    # Bind MCP tools
-    model_with_tools = model.bind_tools(tools)
-
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    if not workspace_id or not dataset_id:
-        raise ValueError("Workspace/Dataset ID missing in .env")
+    if not dataset_id:
+        raise ValueError("POWERBI_DATASET_ID missing in .env")
 
-    # Initial instruction to inspect schema
-    user_query = f"""
-You are connected to a Power BI Semantic Model via MCP.
+    print("\n🔎 Directly testing GetSemanticModelSchema (NO LLM)...\n")
 
-Workspace ID: {workspace_id}
-Dataset ID: {dataset_id}
+    schema_tool = tool_map["GetSemanticModelSchema"]
 
-Use MCP tools to:
-1. Discover tables
-2. Inspect schema
-3. List measures
+    raw_schema = await schema_tool.ainvoke(
+        {"artifactId": dataset_id},
+        config={"run_name": "direct_schema_test"}
+    )
 
-Do not answer without using tools.
-"""
-
-    messages = [
-        SystemMessage(content="You must use MCP tools to answer. Never guess."),
-        HumanMessage(content=user_query),
-    ]
-
-    print("\n📊 Inspecting semantic model via MCP...\n")
-
-    result = await run_mcp_reasoning(model_with_tools, tool_map, messages)
-
-    print("\n================ FINAL RESPONSE ================\n")
-    print(result.content)
+    print("\n================ RAW SCHEMA RESPONSE ================\n")
+    print(raw_schema)
+    print("\n====================================================\n")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
