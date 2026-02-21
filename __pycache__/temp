@@ -101,6 +101,11 @@ async def main():
 
     print(f"✅ Connected. Available tools: {list(tool_map.keys())}")
 
+    for t in tools:
+        print("Tool: ", t.name)
+        print("Schema: ", t.args_schema)
+        print("------------------------------")
+
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
     # -----------------------------
@@ -149,3 +154,27 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
+
+after running this above code:
+
+
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+Ask your question: Fetch schema
+🔎 Detected intent: schema
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Available tools: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
+Tool:  ExecuteQuery
+Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to execute Dax query against.', 'type': 'string'}, 'daxQuery': {'description': 'The DAX query to execute against the underlying Power BI semantic model.', 'type': 'string'}, 'maxRows': {'description': 'The maximum number of rows to return (optional, default: 250, max: 1000)', 'type': ['integer', 'null'], 'default': None}}, 'required': ['artifactId', 'daxQuery']}
+------------------------------
+Tool:  GenerateQuery
+Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to generate the Dax query on.', 'type': 'string'}, 'userInput': {'description': "The user's input for which the DAX query should be generated. This will be used to understand the intent and focus of the query.", 'type': 'string'}, 'schemaSelection': {'description': "Schema context containing the relevant tables, columns, and measures needed to answer the question. Include related tables that might be needed for joins or context, key columns for filtering/grouping, and measures for calculations. It's better to include slightly more than needed rather than too little.", 'type': 'object', 'properties': {'tables': {'description': "Array of tables that contain data relevant to the user's question. You must include tables that will be used in the DAX query.", 'type': ['array', 'null'], 'items': {'type': 'object', 'properties': {'name': {'description': 'Name of the table that contains relevant data', 'type': ['string', 'null']}, 'columns': {'description': "Column names from this table that are needed to answer the user's question. You must include columns that will be referenced in the DAX query or are needed for filtering/grouping.", 'type': ['array', 'null'], 'items': {'type': 'string'}}, 'measures': {'description': "Measure names from this table that are needed to answer the user's question. You must include measures that will be used in calculations or aggregations.", 'type': ['array', 'null'], 'items': {'type': 'string'}}}}}}}, 'chatHistory': {'description': "Optional chat history to provide context for the DAX generation. This should include user questions and assistant responses containing DAX queries. Use 'user' role for business questions and 'assistant' role for the corresponding DAX queries that were generated. This allows the DAX generation to understand what queries were previously generated and build upon them appropriately.", 'type': 'array', 'items': {'type': 'object', 'properties': {'role': {'description': "The role of the message author. Use 'user' for business questions and 'assistant' for DAX query responses.", 'type': 'string', 'enum': ['System', 'User', 'Assistant', 'Tool', 'Developer']}, 'content': {'description': 'The content of the message. For user messages, this should be the business question. For assistant messages, this should be the actual DAX query that was generated (including any comments).', 'type': ['string', 'null']}}}, 'default': None}}, 'required': ['artifactId', 'userInput', 'schemaSelection']}
+------------------------------
+Tool:  GetSemanticModelSchema
+Schema:  {'type': 'object', 'properties': {'artifactId': {'description': 'The GUID of the artifact (semantic model or report) to fetch the schema for.', 'type': 'string'}}, 'required': ['artifactId']}
+------------------------------
+[]
