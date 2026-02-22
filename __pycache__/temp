@@ -111,7 +111,8 @@ async def main():
             "transport": "http",
             "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
             "headers": {
-                "Authorization": f"Bearer {token}"
+                "Authorization": f"Bearer {token}",
+                "x-ms-powerbi-workspace-id": os.getenv("POWERBI_WORKSPACE_ID")
             }
         }
     }
@@ -196,3 +197,17 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
+
+the above code output:
+
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+Ask your question: Show schema of all tables
+🔎 Detected intent: schema
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Tools available: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
+[]
