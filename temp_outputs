@@ -1,116 +1,185 @@
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp_working.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-🔐 Generating Azure access token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected. Discovered 3 MCP tools
-📊 Fetching semantic model schema...
+import os
+import asyncio
+import certifi
+import requests
+import json
+from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.chat_models import init_chat_model
+from langchain.agents import create_agent
 
-================ DATASET SCHEMA ================
+load_dotenv()
 
-📊 Tables:
-
-📁 calendar
-   └─ date (DateTime)
-   └─ year (Text)
-   └─ quarter_no (Text)
-   └─ quarter_yy_no (Text)
-   └─ month_no (Double)
-   └─ month (Text)
-   └─ month_yy_no (Text)
-   └─ week_no (Double)
-   └─ week_yy_no (Text)
-   └─ day_of_week (Text)
-   └─ month_start (DateTime)
-   └─ month_end (DateTime)
-   └─ quarter_start (DateTime)
-   └─ quarter_end (DateTime)
-
-📁 cost
-   └─ resId (Integer)
-   └─ date (DateTime)
-   └─ nok (Double)
-   └─ raw_usd (Double)
-   └─ category (Text)
-   └─ sub_category (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ kubeit (Integer)
-   └─ usd (Double)
-   └─ customer_name (Text)
-
-📁 customers
-   └─ customer_id (Text)
-   └─ customer_name (Text)
-   └─ source (Integer)
-
-📁 details
-   └─ resource_id (Integer)
-   └─ detail (Text)
-   └─ value (Text)
-   └─ startDate (DateTime)
-   └─ is_current (Integer)
-   └─ rn (Integer)
-   └─ endDate (DateTime)
-
-📁 regions
-   └─ continent (Text)
-   └─ location (Text)
-   └─ geographyId (Text)
-   └─ latitude (Text)
-   └─ longitude (Text)
-   └─ typeId (Text)
-   └─ isOpen (Text)
-   └─ hasGroundStation (Text)
-   └─ yearOpen (Text)
-   └─ dataResidency (Text)
-   └─ availableTo (Text)
-   └─ announcementLink (Text)
-   └─ productsByRegionLink (Text)
-   └─ productsByRegionLinkNonRegional (Text)
-   └─ availabilityZonesId (Text)
-   └─ id (Text)
-   └─ displayName (Text)
-
-📁 resources
-   └─ resource_id (Integer)
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ location (Text)
-   └─ resource_group (Text)
-   └─ type (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ current_state (Text)
-   └─ last_updated_time (DateTime)
-   └─ customer_name (Text)
-
-📁 subscriptions
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ management_group (Text)
-   └─ management_group_name (Text)
-
-📁 tags
-   └─ resource_id (Integer)
-   └─ product_centre (Text)
-   └─ solution_name (Text)
-   └─ environment (Text)
-   └─ project_number (Text)
-   └─ project_task (Text)
-   └─ owner (Text)
-   └─ verit-owneremail (Text)
+# Fix SSL issues in corporate environments
+os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
-🔗 Relationships:
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
+def get_azure_access_token():
+    """
+    Generates Azure AD token using Service Principal
+    """
+    tenant = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
 
-'subscriptions'[subscription_id]  --->  'resources'[subscription_id]
-'tags'[resource_id]  --->  'resources'[resource_id]
-'regions'[id]  --->  'resources'[location]
-'resources'[resource_id]  --->  'tags'[resource_id]
-'resources'[resource_id]  --->  'cost'[resId]
-'calendar'[date]  --->  'cost'[date]
-'resources'[resource_id]  --->  'details'[resource_id]
+    if not tenant or not client_id or not client_secret:
+        raise ValueError("Azure credentials missing in .env")
 
-✅ MCP integration validated successfully.
+    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://analysis.windows.net/powerbi/api/.default",
+        "grant_type": "client_credentials",
+    }
+
+    response = requests.post(url, data=payload)
+    response.raise_for_status()
+
+    print("✅ Azure token generated successfully")
+    return response.json()["access_token"]
+
+
+# -----------------------------
+# MCP RESULT EXTRACTION
+# -----------------------------
+def extract_mcp_schema(result):
+    """
+    Extract ONLY the MCP structured payload (ignore LangChain metadata)
+    """
+    for msg in result["messages"]:
+        if msg.type == "tool":
+            artifact = msg.artifact
+            if artifact and "structured_content" in artifact:
+                return artifact["structured_content"]
+
+    return None
+
+
+# -----------------------------
+# LLM INTERPRETATION LAYER
+# -----------------------------
+async def interpret_schema_with_llm(model, schema, user_question):
+    """
+    Let LLM decide what to show based on user intent
+    """
+
+    prompt = f"""
+You are a FinOps analyst working with a Power BI semantic model.
+
+You are given the FULL dataset schema in JSON format below.
+
+IMPORTANT RULES:
+- Do NOT dump entire schema unless user explicitly asks.
+- Filter only what is relevant.
+- If user asks for a specific table → show only that table.
+- If user asks for list of tables → summarize names only.
+- If user asks analytical question → explain which fields would be used.
+- Be concise and business-friendly.
+
+SCHEMA:
+{json.dumps(schema, indent=2)}
+
+USER QUESTION:
+{user_question}
+"""
+
+    response = await model.ainvoke(prompt)
+    return response.content
+
+
+# -----------------------------
+# MAIN EXECUTION
+# -----------------------------
+async def main():
+
+    # 🔹 Ask user question dynamically
+    user_question = input("\n💬 Ask your FinOps question: ")
+
+    print("\n🔐 Generating Azure access token...")
+    token = get_azure_access_token()
+
+    # -----------------------------
+    # CONNECT TO MCP
+    # -----------------------------
+    servers = {
+        "powerbi-remote": {
+            "transport": "http",
+            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
+            "headers": {
+                "Authorization": f"Bearer {token}"
+            }
+        }
+    }
+
+    print("🔌 Connecting to MCP server...")
+    client = MultiServerMCPClient(servers)
+
+    tools = await client.get_tools()
+    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
+
+    # -----------------------------
+    # INITIALIZE LLM
+    # -----------------------------
+    model = init_chat_model(
+        os.getenv("MODEL"),
+        model_provider="openai",
+        api_key=os.getenv("GITHUB_TOKEN"),
+        base_url=os.getenv("ENDPOINT"),
+    )
+
+    system_prompt = """
+You are a FinOps assistant.
+
+You MUST:
+1. Use MCP tools to retrieve schema metadata.
+2. NEVER assume schema.
+3. After retrieving schema, interpret it to answer user question.
+4. Only return relevant information.
+"""
+
+    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
+
+    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+
+    # -----------------------------
+    # STEP 1 → ALWAYS FETCH SCHEMA FROM MCP
+    # -----------------------------
+    print("📊 Retrieving semantic model metadata from MCP...")
+
+    schema_query = f"""
+Inspect the semantic model.
+
+Workspace ID: {workspace_id}
+Dataset ID: {dataset_id}
+"""
+
+    result = await agent_graph.ainvoke(
+        {"messages": [{"role": "user", "content": schema_query}]}
+    )
+
+    schema = extract_mcp_schema(result)
+
+    if not schema:
+        print("❌ Failed to retrieve schema from MCP")
+        return
+
+    print("✅ Schema retrieved. Letting LLM interpret...")
+
+    # -----------------------------
+    # STEP 2 → LLM DECIDES WHAT TO SHOW
+    # -----------------------------
+    answer = await interpret_schema_with_llm(model, schema, user_question)
+
+    print("\n================ ANSWER ================\n")
+    print(answer)
+    print("\n=======================================\n")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
