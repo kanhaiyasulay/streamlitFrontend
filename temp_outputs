@@ -5,38 +5,25 @@ C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation
 🔐 Requesting Azure token...
 ✅ Azure token generated successfully
 🔌 Connecting to MCP server...
-✅ Connected. Discovered 3 MCP tools
+✅ Allowed tools: ['ExecuteQuery', 'GetSemanticModelSchema']
+✅ Connected. Discovered 2 MCP tools
 
 ✅ FinOps Assistant Ready.
 Type your question (or 'exit' to quit).
 
-Ask FinOps question: What is current cloud cost?
-❌ Error while processing question:
-An error occurred invoking 'GenerateQuery': Failed to generate DAX query. {"Message":"Failed to fetch artifact info.","Source":"ML","error_code":"BAD_REQUEST"}. RootActivityId: 9577c046-6ff9-44d7-a12e-9a8b078d106b.
-Ask FinOps question: Show schema of databse
+Ask FinOps question: show table schema
 
 📊 Answer:
 
-The schema has been retrieved successfully. What specific details would you like about the schema—such as tables, columns, measures, or relationships?
+The schema of the semantic model or tables has been retrieved successfully! However, it’s quite detailed. Could you clarify which specific table or part of the schema you are interested in?
 
 ------------------------------------------------------------
 
-Ask FinOps question: show tables
+Ask FinOps question: i want to see the cost table schema
 
 📊 Answer:
 
-I'm unable to retrieve the table information from the semantic model. Could you try again later or confirm the dataset connection details?     
-
-------------------------------------------------------------
-
-Ask FinOps question: show schema of tables
-
-📊 Answer:
-
-The schema of the tables includes detailed metadata, but I am retrieving the information. Please wait while I gather the data.
-I attempted to derive the schema for the dataset "bf47a12c-18e3-49b3-ad4d-8f90f282928c," but I currently lack direct access to any table information.
-
-
+I am unable to retrieve the semantic model schema at this time. There may be an issue with the connectivity or authorization to access the dataset. Please verify if access permissions to the dataset are set correctly, or try again later.
 
 ------------------------------------------------------------
 
