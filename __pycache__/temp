@@ -1,16 +1,13 @@
 import os
-import asyncio
+import json
 import certifi
 import requests
-import json
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
 
 load_dotenv()
-
-# Fix SSL issues in corporate environments
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
@@ -18,15 +15,9 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 # AUTHENTICATION
 # -----------------------------
 def get_azure_access_token():
-    """
-    Generates Azure AD token using Service Principal
-    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
-
-    if not tenant or not client_id or not client_secret:
-        raise ValueError("Azure credentials missing in .env")
 
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
@@ -39,92 +30,50 @@ def get_azure_access_token():
 
     response = requests.post(url, data=payload)
     response.raise_for_status()
-
-    print("✅ Azure token generated successfully")
     return response.json()["access_token"]
 
 
 # -----------------------------
-# MCP RESULT EXTRACTION
+# EXTRACT MCP SCHEMA
 # -----------------------------
 def extract_mcp_schema(result):
-    """
-    Extract ONLY the MCP structured payload (ignore LangChain metadata)
-    """
     for msg in result["messages"]:
         if msg.type == "tool":
             artifact = msg.artifact
             if artifact and "structured_content" in artifact:
                 return artifact["structured_content"]
-
     return None
 
 
 # -----------------------------
-# LLM INTERPRETATION LAYER
+# GLOBAL CACHE (keeps schema loaded once)
 # -----------------------------
-async def interpret_schema_with_llm(model, schema, user_question):
-    """
-    Let LLM decide what to show based on user intent
-    """
-
-    prompt = f"""
-You are a FinOps analyst working with a Power BI semantic model.
-
-You are given the FULL dataset schema in JSON format below.
-
-IMPORTANT RULES:
-- Do NOT dump entire schema unless user explicitly asks.
-- Filter only what is relevant.
-- If user asks for a specific table → show only that table.
-- If user asks for list of tables → summarize names only.
-- If user asks analytical question → explain which fields would be used.
-- Be concise and business-friendly.
-
-SCHEMA:
-{json.dumps(schema, indent=2)}
-
-USER QUESTION:
-{user_question}
-"""
-
-    response = await model.ainvoke(prompt)
-    return response.content
+class FinOpsContext:
+    def __init__(self, model, agent_graph, schema):
+        self.model = model
+        self.agent_graph = agent_graph
+        self.schema = schema
 
 
 # -----------------------------
-# MAIN EXECUTION
+# INITIAL SETUP (RUNS ONCE)
 # -----------------------------
-async def main():
+async def finops_setup():
 
-    # 🔹 Ask user question dynamically
-    user_question = input("\n💬 Ask your FinOps question: ")
-
-    print("\n🔐 Generating Azure access token...")
+    print("🔐 Getting Azure Token...")
     token = get_azure_access_token()
 
-    # -----------------------------
-    # CONNECT TO MCP
-    # -----------------------------
     servers = {
         "powerbi-remote": {
             "transport": "http",
             "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
+            "headers": {"Authorization": f"Bearer {token}"}
         }
     }
 
-    print("🔌 Connecting to MCP server...")
     client = MultiServerMCPClient(servers)
-
     tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    # -----------------------------
-    # INITIALIZE LLM
-    # -----------------------------
     model = init_chat_model(
         os.getenv("MODEL"),
         model_provider="openai",
@@ -135,11 +84,8 @@ async def main():
     system_prompt = """
 You are a FinOps assistant.
 
-You MUST:
-1. Use MCP tools to retrieve schema metadata.
-2. NEVER assume schema.
-3. After retrieving schema, interpret it to answer user question.
-4. Only return relevant information.
+Use the schema to answer questions and generate DAX queries when needed.
+Do NOT hallucinate tables or columns.
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -147,10 +93,7 @@ You MUST:
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    # -----------------------------
-    # STEP 1 → ALWAYS FETCH SCHEMA FROM MCP
-    # -----------------------------
-    print("📊 Retrieving semantic model metadata from MCP...")
+    print("📊 Loading schema from MCP (one-time)...")
 
     schema_query = f"""
 Inspect the semantic model.
@@ -165,86 +108,30 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    if not schema:
-        print("❌ Failed to retrieve schema from MCP")
-        return
+    print("✅ Schema cached successfully")
 
-    print("✅ Schema retrieved. Letting LLM interpret...")
-
-    # -----------------------------
-    # STEP 2 → LLM DECIDES WHAT TO SHOW
-    # -----------------------------
-    answer = await interpret_schema_with_llm(model, schema, user_question)
-
-    print("\n================ ANSWER ================\n")
-    print(answer)
-    print("\n=======================================\n")
+    return FinOpsContext(model, agent_graph, schema)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# -----------------------------
+# CHAT FUNCTION (CALLED PER MESSAGE)
+# -----------------------------
+async def chat_instance_stream(user_question, context: FinOpsContext):
 
-can you attach the below frontend code with the above backend code
+    schema = context.schema
+    model = context.model
 
-import streamlit as st
-import asyncio
-from finops_agent import chat_instance_stream,finops_setup
- 
-Login_info={"admin":"pass123"}
- 
-@st.cache_resource
-def get_cached_agent():
-    return asyncio.run(finops_setup())
- 
-def check_login():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated=False
-    if not st.session_state.authenticated:
-        st.title("Login to Chatbot")
-        user=st.text_input("Username")
-        passwd=st.text_input("Password")
- 
-        if st.button("Login"):
-            if user in Login_info and Login_info[user]==passwd:
-                st.session_state.authenticated=True
-                st.rerun()
-            else:
-                st.error("Invalid Username or password")
-        return False
-    return True
- 
-st.title("Cloud Operational Agent")
-st.divider()
- 
-if check_login():
-    with st.sidebar:
-        st.title("Configuration")
-        model_name=st.selectbox(
-            "Select Provider",
-            ["meta/Llama-4-Scout-17B-16E-Instruct","openai/gpt-5","deepseek/DeepSeek-V3-0324"]
-        )
-        temp=st.slider("Temperature",0.0,2.0,0.7,0.1)
- 
-        st.divider()
-        if st.button("Logout"):
-            st.session_state.authenticated=False
-            st.rerun()
-    chat_agent=get_cached_agent()
-   
-    st.title(f"Chatting with {"LLM"}")
-    if "messages" not in st.session_state:
-        st.session_state.messages=[]
-   
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-   
-    if prompt :=st.chat_input("Type your response here"):
-        st.chat_message("user").markdown(prompt)
-        st.session_state.messages.append({"role":"user","content":prompt})
-        full_response=asyncio.run(chat_instance_stream(prompt,chat_agent))
-        with st.chat_message("assistant"):
-            st.markdown(full_response)
-        # with st.chat_message("assistant"):
-        #     full_response=st.write_stream(chat_instance_stream(prompt,chat_agent))
-        st.session_state.messages.append({"role":"assistant","content":full_response})
+    prompt = f"""
+You are a FinOps expert.
+
+Answer the user question using this schema.
+If calculation is requested, generate a DAX query.
+
+Return format:
+
+Answer:
+<business explanation>
+
+DAX Query (if applicable):
+```DAX
+<query>
