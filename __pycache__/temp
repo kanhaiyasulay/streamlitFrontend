@@ -1,135 +1,27 @@
-import os
-import asyncio
-import certifi
-import requests
-from dotenv import load_dotenv
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python mcp_example.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
 
-# Load environment variables
-load_dotenv()
+💬 Ask your FinOps question: What is total cloud cost
 
-# Fix SSL issues in corporate environments
-os.environ["SSL_CERT_FILE"] = certifi.where()
+🔐 Generating Azure access token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Discovered 3 MCP tools
+📊 Retrieving semantic model metadata from MCP...
+✅ Schema retrieved. Letting LLM interpret...
 
+================ ANSWER ================
 
-# -----------------------------
-# AUTHENTICATION
-# -----------------------------
-def get_azure_access_token():
-    tenant = os.getenv("AZURE_TENANT_ID")
-    client_id = os.getenv("AZURE_CLIENT_ID")
-    client_secret = os.getenv("AZURE_CLIENT_SECRET")
+To calculate the **total cloud cost**, use the `cost` table. Specifically:
 
-    if not tenant or not client_id or not client_secret:
-        raise ValueError("Azure credentials missing in .env")
+- **Field to sum:** `usd` (represents cloud cost in USD).
+- You may also consider `nok` (cost in NOK) if required for regional insights.
 
-    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+For analysis:
+- You can use the `calendar` table for time-based segmentation (e.g., monthly, quarterly, yearly totals).
+- Optionally, use the `category` and `sub_category` columns in the `cost` table for cost breakdowns.
 
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": "https://analysis.windows.net/powerbi/api/.default",
-        "grant_type": "client_credentials",
-    }
+This analysis can be visualized in Power BI with a total sum measure or a time-series report using `usd` or `nok`.
 
-    print("🔐 Requesting Azure token...")
-    response = requests.post(url, data=payload)
-    response.raise_for_status()
-
-    print("✅ Azure token generated successfully")
-    return response.json()["access_token"]
-
-
-# -----------------------------
-# OPTIONAL: Extract raw MCP payload if needed
-# -----------------------------
-def extract_tool_artifacts(result):
-    artifacts = []
-    for msg in result["messages"]:
-        if msg.type == "tool" and msg.artifact:
-            artifacts.append(msg.artifact)
-    return artifacts
-
-
-# -----------------------------
-# MAIN EXECUTION
-# -----------------------------
-async def main():
-    print("🔐 Generating Azure access token...")
-    token = get_azure_access_token()
-
-    # Connect to Fabric MCP Endpoint
-    servers = {
-        "powerbi-remote": {
-            "transport": "http",
-            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
-        }
-    }
-
-    print("🔌 Connecting to MCP server...")
-    client = MultiServerMCPClient(servers)
-
-    tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
-
-    # Initialize LLM
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
-
-    # System behavior for FinOps assistant
-    system_prompt = f"""
-    You are a FinOps analyst working with Power BI semantic models via Microsoft Fabric MCP.
-
-    Always use MCP tools to answer questions.
-    Never assume schema.
-    Always query real data before answering.
-    Provide business-friendly explanations.
-
-    Workspace ID: {os.getenv("POWERBI_WORKSPACE_ID")}
-    Dataset ID: {os.getenv("POWERBI_DATASET_ID")}
-    """
-
-    # Create MCP-aware agent
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
-
-    print("\n✅ FinOps Assistant Ready.")
-    print("Type your question (or 'exit' to quit).\n")
-
-    # Interactive Loop
-    while True:
-        user_question = input("Ask FinOps question: ").strip()
-
-        if user_question.lower() in ["exit", "quit"]:
-            print("👋 Exiting FinOps assistant.")
-            break
-
-        try:
-            result = await agent_graph.ainvoke(
-                {"messages": [{"role": "user", "content": user_question}]}
-            )
-
-            # Print final LLM answer
-            final_answer = result["messages"][-1].content
-            print("\n📊 Answer:\n")
-            print(final_answer)
-            print("\n" + "-" * 60 + "\n")
-
-        except Exception as e:
-            print("❌ Error while processing question:")
-            print(e)
-
-
-# -----------------------------
-# ENTRY POINT
-# -----------------------------
-if __name__ == "__main__":
-    asyncio.run(main())
+=======================================
