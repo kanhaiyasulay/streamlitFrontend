@@ -1,116 +1,33 @@
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py  
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
 C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
   from pydantic.v1.fields import FieldInfo as FieldInfoV1
 🔐 Generating Azure access token...
+🔐 Requesting Azure token...
 ✅ Azure token generated successfully
 🔌 Connecting to MCP server...
 ✅ Connected. Discovered 3 MCP tools
-📊 Fetching semantic model schema...
 
-================ DATASET SCHEMA ================
+✅ FinOps Assistant Ready.
+Type your question (or 'exit' to quit).
 
-📊 Tables:
+Ask FinOps question: show me schema of cost table
 
-📁 calendar
-   └─ date (DateTime)
-   └─ year (Text)
-   └─ quarter_no (Text)
-   └─ quarter_yy_no (Text)
-   └─ month_no (Double)
-   └─ month (Text)
-   └─ month_yy_no (Text)
-   └─ week_no (Double)
-   └─ week_yy_no (Text)
-   └─ day_of_week (Text)
-   └─ month_start (DateTime)
-   └─ month_end (DateTime)
-   └─ quarter_start (DateTime)
-   └─ quarter_end (DateTime)
+📊 Answer:
 
-📁 cost
-   └─ resId (Integer)
-   └─ date (DateTime)
-   └─ nok (Double)
-   └─ raw_usd (Double)
-   └─ category (Text)
-   └─ sub_category (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ kubeit (Integer)
-   └─ usd (Double)
-   └─ customer_name (Text)
+I'm unable to retrieve the schema for the "cost" table at the moment due to a technical issue. If there's a specific question or detail you're looking for, such as measures, columns, or aggregations related to cost, let me know, and I can assist using other methods!
 
-📁 customers
-   └─ customer_id (Text)
-   └─ customer_name (Text)
-   └─ source (Integer)
+------------------------------------------------------------
 
-📁 details
-   └─ resource_id (Integer)
-   └─ detail (Text)
-   └─ value (Text)
-   └─ startDate (DateTime)
-   └─ is_current (Integer)
-   └─ rn (Integer)
-   └─ endDate (DateTime)
+Ask FinOps question: what is current cloud cost
+❌ Error while processing question:
+An error occurred invoking 'GenerateQuery': Failed to generate DAX query. {"Message":"Failed to fetch artifact info.","Source":"ML","error_code":"BAD_REQUEST"}. RootActivityId: 5f76980d-0a2f-4cf3-b508-016e8337fd71.
+Ask FinOps question: show schema
 
-📁 regions
-   └─ continent (Text)
-   └─ location (Text)
-   └─ geographyId (Text)
-   └─ latitude (Text)
-   └─ longitude (Text)
-   └─ typeId (Text)
-   └─ isOpen (Text)
-   └─ hasGroundStation (Text)
-   └─ yearOpen (Text)
-   └─ dataResidency (Text)
-   └─ availableTo (Text)
-   └─ announcementLink (Text)
-   └─ productsByRegionLink (Text)
-   └─ productsByRegionLinkNonRegional (Text)
-   └─ availabilityZonesId (Text)
-   └─ id (Text)
-   └─ displayName (Text)
+📊 Answer:
 
-📁 resources
-   └─ resource_id (Integer)
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ location (Text)
-   └─ resource_group (Text)
-   └─ type (Text)
-   └─ name (Text)
-   └─ customer_id (Text)
-   └─ current_state (Text)
-   └─ last_updated_time (DateTime)
-   └─ customer_name (Text)
+I tried to retrieve the schema, but I couldn't fetch it. Could you let me know if I should attempt it again or assist with any alternative?    
 
-📁 subscriptions
-   └─ subscription_id (Text)
-   └─ subscription_name (Text)
-   └─ management_group (Text)
-   └─ management_group_name (Text)
+------------------------------------------------------------
 
-📁 tags
-   └─ resource_id (Integer)
-   └─ product_centre (Text)
-   └─ solution_name (Text)
-   └─ environment (Text)
-   └─ project_number (Text)
-   └─ project_task (Text)
-   └─ owner (Text)
-   └─ verit-owneremail (Text)
-
-
-🔗 Relationships:
-
-'subscriptions'[subscription_id]  --->  'resources'[subscription_id]
-'tags'[resource_id]  --->  'resources'[resource_id]
-'regions'[id]  --->  'resources'[location]
-'resources'[resource_id]  --->  'tags'[resource_id]
-'resources'[resource_id]  --->  'cost'[resId]
-'calendar'[date]  --->  'cost'[date]
-'resources'[resource_id]  --->  'details'[resource_id]
-
-✅ MCP integration validated successfully.
+Ask FinOps question: exit
+👋 Exiting FinOps assistant.
