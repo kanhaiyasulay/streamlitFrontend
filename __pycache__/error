@@ -1,1 +1,12 @@
+SyntaxError: File "C:\Users\KANSUL\mcp-help\finops_agent.py", line 124
+      prompt = f"""
+               ^
+SyntaxError: unterminated triple-quoted f-string literal (detected at line 137)
 
+File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\script_runner.py", line 689, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+File "C:\Users\KANSUL\mcp-help\ui_fin.py", line 3, in <module>
+    from finops_agent import chat_instance_stream,finops_setup
