@@ -1,0 +1,199 @@
+import os
+import asyncio
+import certifi
+import requests
+from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+load_dotenv()
+
+# Fix SSL issues in corporate environments
+os.environ["SSL_CERT_FILE"] = certifi.where()
+
+
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
+def get_azure_access_token():
+    tenant = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
+
+    if not tenant or not client_id or not client_secret:
+        raise ValueError("Azure credentials missing in .env")
+
+    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://analysis.windows.net/powerbi/api/.default",
+        "grant_type": "client_credentials",
+    }
+
+    response = requests.post(url, data=payload)
+    response.raise_for_status()
+
+    print("✅ Azure token generated successfully")
+    return response.json()["access_token"]
+
+
+# -----------------------------
+# INTENT CLASSIFIER (STRICT)
+# -----------------------------
+def classify_intent(question: str) -> str:
+    q = question.lower()
+
+    if "schema" in q:
+        return "schema"
+
+    if "cost" in q or "spend" in q:
+        return "cost"
+
+    return "unknown"
+
+
+# -----------------------------
+# PRINT SCHEMA
+# -----------------------------
+def print_schema(schema):
+    print("\n================ DATASET SCHEMA ================\n")
+
+    for table in schema["Tables"]:
+        print(f"📁 {table['Name']}")
+        for col in table["Columns"]:
+            print(f"   └─ {col['Name']} ({col['Type']})")
+        print()
+
+
+# -----------------------------
+# BUILD FOCUSED SCHEMA FOR QUERY GENERATION
+# -----------------------------
+def build_schema_selection(full_schema):
+    """
+    Only send relevant tables to MCP query generator.
+    This prevents overloading the query planner.
+    """
+
+    relevant_tables = ["cost", "calendar", "resources"]
+
+    tables = []
+    for t in full_schema["Tables"]:
+        if t["Name"] in relevant_tables:
+            tables.append({
+                "name": t["Name"],
+                "columns": [c["Name"] for c in t["Columns"]],
+                "measures": []
+            })
+
+    return {"tables": tables}
+
+
+# -----------------------------
+# MAIN EXECUTION
+# -----------------------------
+async def main():
+
+    user_question = input("\nAsk your question: ").strip()
+
+    intent = classify_intent(user_question)
+    print(f"🔎 Detected intent: {intent}")
+
+    if intent == "unknown":
+        print("[]")
+        return
+
+    print("🔐 Generating Azure access token...")
+    token = get_azure_access_token()
+
+    servers = {
+        "powerbi-remote": {
+            "transport": "http",
+            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
+            "headers": {
+                "Authorization": f"Bearer {token}",
+                "x-ms-powerbi-workspace-id": os.getenv("POWERBI_WORKSPACE_ID")
+            }
+        }
+    }
+
+    print("🔌 Connecting to MCP server...")
+    client = MultiServerMCPClient(servers)
+
+    tools = await client.get_tools()
+    tool_map = {tool.name: tool for tool in tools}
+
+    print(f"✅ Connected. Tools available: {list(tool_map.keys())}")
+
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+
+    # -----------------------------
+    # SCHEMA REQUEST
+    # -----------------------------
+    if intent == "schema":
+        try:
+            schema_tool = tool_map["GetSemanticModelSchema"]
+
+            schema_result = await schema_tool.ainvoke({
+                "artifactId": dataset_id
+            })
+
+            schema = schema_result.artifact["structured_content"]
+            print_schema(schema)
+
+        except Exception:
+            print("[]")
+
+        return
+
+    # -----------------------------
+    # COST REQUEST (FULL MCP PIPELINE)
+    # -----------------------------
+    if intent == "cost":
+        try:
+            # STEP 1 — Fetch Schema
+            schema_tool = tool_map["GetSemanticModelSchema"]
+            schema_result = await schema_tool.ainvoke({
+                "artifactId": dataset_id
+            })
+
+            full_schema = schema_result.artifact["structured_content"]
+
+            # STEP 2 — Build Schema Context for MCP
+            schema_selection = build_schema_selection(full_schema)
+
+            # STEP 3 — Generate DAX from NL Question
+            generate_tool = tool_map["GenerateQuery"]
+            dax_result = await generate_tool.ainvoke({
+                "artifactId": dataset_id,
+                "userInput": user_question,
+                "schemaSelection": schema_selection
+            })
+
+            dax_query = dax_result.artifact["query"]
+
+            print("\n🧠 Generated DAX:\n")
+            print(dax_query)
+
+            # STEP 4 — Execute Query
+            execute_tool = tool_map["ExecuteQuery"]
+            data_result = await execute_tool.ainvoke({
+                "artifactId": dataset_id,
+                "daxQuery": dax_query
+            })
+
+            print("\n📊 Query Result:\n")
+            print(data_result.artifact)
+
+        except Exception:
+            # STRICT — no fallback allowed
+            print("[]")
+
+        return
+
+
+# -----------------------------
+# ENTRY POINT
+# -----------------------------
+if __name__ == "__main__":
+    asyncio.run(main())
