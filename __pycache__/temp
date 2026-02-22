@@ -2,9 +2,10 @@ import os
 import asyncio
 import certifi
 import requests
-import traceback
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.chat_models import init_chat_model
+from langchain.agents import create_agent
 
 load_dotenv()
 
@@ -12,10 +13,10 @@ load_dotenv()
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
-# -----------------------------
-# AUTHENTICATION
-# -----------------------------
 def get_azure_access_token():
+    """
+    Generates Azure AD token using Service Principal
+    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
@@ -32,7 +33,6 @@ def get_azure_access_token():
         "grant_type": "client_credentials",
     }
 
-    print("🔐 Requesting Azure token...")
     response = requests.post(url, data=payload)
     response.raise_for_status()
 
@@ -40,86 +40,48 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-# -----------------------------
-# INTENT CLASSIFIER
-# -----------------------------
-def classify_intent(question: str) -> str:
-    q = question.lower()
+def extract_mcp_schema(result):
+    """
+    Extract ONLY the MCP structured payload (ignore LangChain metadata)
+    """
+    for msg in result["messages"]:
+        if msg.type == "tool":
+            artifact = msg.artifact
+            if artifact and "structured_content" in artifact:
+                return artifact["structured_content"]
 
-    if "schema" in q:
-        return "schema"
-
-    if "cost" in q or "spend" in q:
-        return "cost"
-
-    return "unknown"
+    return None
 
 
-# -----------------------------
-# PRINT SCHEMA
-# -----------------------------
 def print_schema(schema):
+    """
+    Pretty print schema for debugging / validation
+    """
     print("\n================ DATASET SCHEMA ================\n")
 
+    print("📊 Tables:\n")
     for table in schema["Tables"]:
         print(f"📁 {table['Name']}")
         for col in table["Columns"]:
             print(f"   └─ {col['Name']} ({col['Type']})")
         print()
 
-
-# -----------------------------
-# BUILD FOCUSED SCHEMA
-# (Optional optimization)
-# -----------------------------
-def build_schema_selection(full_schema):
-
-    relevant_tables = ["cost", "calendar", "resources"]
-
-    tables = []
-    for t in full_schema["Tables"]:
-        if t["Name"] in relevant_tables:
-            tables.append({
-                "name": t["Name"],
-                "columns": [c["Name"] for c in t["Columns"]],
-                "measures": []
-            })
-
-    return {"tables": tables}
+    print("\n🔗 Relationships:\n")
+    for rel in schema["ActiveRelationships"]:
+        print(f"{rel['PK']}  --->  {rel['FK']}")
 
 
-# -----------------------------
-# MAIN EXECUTION
-# -----------------------------
 async def main():
-
-    user_question = input("\nAsk your question: ").strip()
-
-    intent = classify_intent(user_question)
-    print(f"🔎 Detected intent: {intent}")
-
-    if intent == "unknown":
-        print("❌ Unsupported question type")
-        return
-
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
-
-    print("Using Workspace ID:", workspace_id)
-    print("Using Dataset ID:", dataset_id)
-
-    if not workspace_id or not dataset_id:
-        raise ValueError("Missing POWERBI_WORKSPACE_ID or POWERBI_DATASET_ID in .env")
-
+    print("🔐 Generating Azure access token...")
     token = get_azure_access_token()
 
+    # Connect to Fabric MCP Endpoint
     servers = {
         "powerbi-remote": {
             "transport": "http",
             "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
             "headers": {
-                "Authorization": f"Bearer {token}",
-                "x-ms-powerbi-workspace-id": workspace_id
+                "Authorization": f"Bearer {token}"
             }
         }
     }
@@ -128,94 +90,55 @@ async def main():
     client = MultiServerMCPClient(servers)
 
     tools = await client.get_tools()
-    tool_map = {tool.name: tool for tool in tools}
+    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    print(f"✅ Connected. Tools available: {list(tool_map.keys())}")
+    # Initialize LLM (will be used later for reasoning)
+    model = init_chat_model(
+        os.getenv("MODEL"),
+        model_provider="openai",
+        api_key=os.getenv("GITHUB_TOKEN"),
+        base_url=os.getenv("ENDPOINT"),
+    )
 
-    # -----------------------------
-    # SCHEMA REQUEST
-    # -----------------------------
-    if intent == "schema":
-        try:
-            print("📡 Requesting schema from MCP...")
+    system_prompt = """
+    You are a FinOps analyst working with Power BI semantic models through MCP.
+    Always use MCP tools to inspect datasets. Never assume schema.
+    """
 
-            schema_tool = tool_map["GetSemanticModelSchema"]
-            schema_result = await schema_tool.ainvoke({
-                "artifactId": dataset_id
-            })
+    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
 
-            print("🔍 Raw MCP Response:")
-            print(schema_result)
+    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-            if not hasattr(schema_result, "artifact") or not schema_result.artifact:
-                print("❌ MCP returned no artifact")
-                return
+    query = f"""
+    Using the Power BI MCP tools, answer the following:
 
-            schema = schema_result.artifact.get("structured_content")
+    What is the schema of cost tabel
 
-            if not schema:
-                print("❌ structured_content missing in artifact")
-                print(schema_result.artifact)
-                return
+    Workspace ID: {workspace_id}
+    Dataset ID: {dataset_id}
+    """
 
-            print_schema(schema)
+    print("📊 Fetching semantic model schema...")
+    result = await agent_graph.ainvoke(
+        {"messages": [{"role": "user", "content": query}]}
+    )
 
-        except Exception:
-            print("\n❌ ERROR while fetching schema:")
-            traceback.print_exc()
+    # ✅ Extract REAL DATA
+    schema = extract_mcp_schema(result)
 
+    if not schema:
+        print("❌ No schema returned from MCP")
         return
 
-    # -----------------------------
-    # COST REQUEST
-    # -----------------------------
-    if intent == "cost":
-        try:
-            print("📡 Fetching schema...")
+    print_schema(schema)
 
-            schema_tool = tool_map["GetSemanticModelSchema"]
-            schema_result = await schema_tool.ainvoke({
-                "artifactId": dataset_id
-            })
-
-            full_schema = schema_result.artifact["structured_content"]
-
-            schema_selection = build_schema_selection(full_schema)
-
-            print("🧠 Generating DAX from question...")
-
-            generate_tool = tool_map["GenerateQuery"]
-            dax_result = await generate_tool.ainvoke({
-                "artifactId": dataset_id,
-                "userInput": user_question,
-                "schemaSelection": schema_selection
-            })
-
-            dax_query = dax_result.artifact["query"]
-
-            print("\nGenerated DAX:\n")
-            print(dax_query)
-
-            print("📊 Executing query...")
-
-            execute_tool = tool_map["ExecuteQuery"]
-            data_result = await execute_tool.ainvoke({
-                "artifactId": dataset_id,
-                "daxQuery": dax_query
-            })
-
-            print("\nQuery Result:\n")
-            print(data_result.artifact)
-
-        except Exception:
-            print("\n❌ ERROR during cost pipeline:")
-            traceback.print_exc()
-
-        return
+    # You will reuse this schema for FinOps reasoning later
+    print("\n✅ MCP integration validated successfully.\n")
 
 
-# -----------------------------
-# ENTRY POINT
-# -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
