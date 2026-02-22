@@ -1,22 +1,194 @@
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-🔐 Generating Azure access token...
-🔐 Requesting Azure token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected. Available tools: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
+import os
+import asyncio
+import certifi
+import requests
+from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
-✅ FinOps MCP Client Ready.
-Type your question (or 'exit' to quit).
+# -----------------------------
+# ENV SETUP
+# -----------------------------
+load_dotenv()
+os.environ["SSL_CERT_FILE"] = certifi.where()
 
-Ask FinOps question: show cost table
-📡 Fetching schema from MCP...
 
-❌ MCP ERROR:
-No artifact found in MCP response
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
+def get_azure_access_token():
+    tenant = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
 
-------------------------------------------------------------
+    if not tenant or not client_id or not client_secret:
+        raise ValueError("Azure credentials missing in .env")
 
-Ask FinOps question: exit
-👋 Exiting.
+    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://analysis.windows.net/powerbi/api/.default",
+        "grant_type": "client_credentials",
+    }
+
+    print("🔐 Requesting Azure token...")
+    response = requests.post(url, data=payload)
+    response.raise_for_status()
+
+    print("✅ Azure token generated successfully")
+    return response.json()["access_token"]
+
+
+# -----------------------------
+# MCP RESPONSE NORMALIZER
+# -----------------------------
+def extract_artifact(result):
+    """
+    Handles ALL MCP return formats seen in langchain_mcp_adapters:
+
+    1️⃣ Object with `.artifact`
+    2️⃣ List of ToolMessage objects
+    3️⃣ Plain list of dictionaries (most common issue)
+    4️⃣ Already-unwrapped structured_content
+    """
+
+    # Case 1 — Direct object
+    if hasattr(result, "artifact"):
+        return result.artifact
+
+    # Case 2/3 — List response
+    if isinstance(result, list):
+        for item in result:
+
+            # ToolMessage style
+            if hasattr(item, "artifact") and item.artifact:
+                return item.artifact
+
+            # Dict style
+            if isinstance(item, dict):
+
+                if "artifact" in item:
+                    return item["artifact"]
+
+                if "structured_content" in item:
+                    return item
+
+    raise ValueError(f"❌ Unrecognized MCP response format:\n{result}")
+
+
+# -----------------------------
+# SIMPLE INTENT CLASSIFIER
+# -----------------------------
+def classify_question(q: str) -> str:
+    q = q.lower()
+
+    if any(word in q for word in ["schema", "table", "column", "structure"]):
+        return "schema"
+
+    return "analysis"
+
+
+# -----------------------------
+# PRINT SCHEMA
+# -----------------------------
+def print_schema(schema):
+    print("\n================ DATASET SCHEMA ================\n")
+
+    for table in schema["Tables"]:
+        print(f"📁 {table['Name']}")
+        for col in table["Columns"]:
+            print(f"   └─ {col['Name']} ({col['Type']})")
+        print()
+
+    print("\n🔗 Relationships:\n")
+    for rel in schema["ActiveRelationships"]:
+        print(f"{rel['PK']}  --->  {rel['FK']}")
+
+
+# -----------------------------
+# MAIN EXECUTION
+# -----------------------------
+async def main():
+    print("🔐 Generating Azure access token...")
+    token = get_azure_access_token()
+
+    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+
+    if not workspace_id or not dataset_id:
+        raise ValueError("Missing POWERBI_WORKSPACE_ID or POWERBI_DATASET_ID")
+
+    # MCP Connection
+    servers = {
+        "powerbi-remote": {
+            "transport": "http",
+            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
+            "headers": {
+                "Authorization": f"Bearer {token}",
+                "x-ms-powerbi-workspace-id": workspace_id,
+                "Content-Type": "application/json"
+            }
+        }
+    }
+
+    print("🔌 Connecting to MCP server...")
+    client = MultiServerMCPClient(servers)
+
+    tools = await client.get_tools()
+    tool_map = {tool.name: tool for tool in tools}
+
+    print(f"✅ Connected. Available tools: {list(tool_map.keys())}")
+
+    print("\n✅ FinOps MCP Client Ready.")
+    print("Type your question (or 'exit' to quit).\n")
+
+    while True:
+        user_question = input("Ask FinOps question: ").strip()
+
+        if user_question.lower() in ["exit", "quit"]:
+            print("👋 Exiting.")
+            break
+
+        intent = classify_question(user_question)
+
+        try:
+            # -----------------------------
+            # SCHEMA REQUEST
+            # -----------------------------
+            if intent == "schema":
+                print("📡 Fetching schema from MCP...")
+
+                schema_tool = tool_map["GetSemanticModelSchema"]
+
+                result = await schema_tool.ainvoke({
+                    "artifactId": dataset_id
+                })
+
+                # Debug once (can remove later)
+                print("DEBUG → MCP returned type:", type(result))
+
+                artifact = extract_artifact(result)
+                schema = artifact["structured_content"]
+
+                print_schema(schema)
+
+            # -----------------------------
+            # ANALYSIS (NEXT PHASE)
+            # -----------------------------
+            else:
+                print("⚠️ Analysis path not implemented yet.")
+                print("Next step: generate DAX locally and call ExecuteQuery.")
+
+        except Exception as e:
+            print("\n❌ MCP ERROR:")
+            print(e)
+
+        print("\n" + "-" * 60 + "\n")
+
+
+# -----------------------------
+# ENTRY POINT
+# -----------------------------
+if __name__ == "__main__":
+    asyncio.run(main())
