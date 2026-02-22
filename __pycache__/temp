@@ -2,6 +2,7 @@ import os
 import asyncio
 import certifi
 import requests
+import traceback
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -31,6 +32,7 @@ def get_azure_access_token():
         "grant_type": "client_credentials",
     }
 
+    print("🔐 Requesting Azure token...")
     response = requests.post(url, data=payload)
     response.raise_for_status()
 
@@ -39,7 +41,7 @@ def get_azure_access_token():
 
 
 # -----------------------------
-# INTENT CLASSIFIER (STRICT)
+# INTENT CLASSIFIER
 # -----------------------------
 def classify_intent(question: str) -> str:
     q = question.lower()
@@ -67,13 +69,10 @@ def print_schema(schema):
 
 
 # -----------------------------
-# BUILD FOCUSED SCHEMA FOR QUERY GENERATION
+# BUILD FOCUSED SCHEMA
+# (Optional optimization)
 # -----------------------------
 def build_schema_selection(full_schema):
-    """
-    Only send relevant tables to MCP query generator.
-    This prevents overloading the query planner.
-    """
 
     relevant_tables = ["cost", "calendar", "resources"]
 
@@ -100,10 +99,18 @@ async def main():
     print(f"🔎 Detected intent: {intent}")
 
     if intent == "unknown":
-        print("[]")
+        print("❌ Unsupported question type")
         return
 
-    print("🔐 Generating Azure access token...")
+    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+
+    print("Using Workspace ID:", workspace_id)
+    print("Using Dataset ID:", dataset_id)
+
+    if not workspace_id or not dataset_id:
+        raise ValueError("Missing POWERBI_WORKSPACE_ID or POWERBI_DATASET_ID in .env")
+
     token = get_azure_access_token()
 
     servers = {
@@ -112,7 +119,7 @@ async def main():
             "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
             "headers": {
                 "Authorization": f"Bearer {token}",
-                "x-ms-powerbi-workspace-id": os.getenv("POWERBI_WORKSPACE_ID")
+                "x-ms-powerbi-workspace-id": workspace_id
             }
         }
     }
@@ -125,33 +132,47 @@ async def main():
 
     print(f"✅ Connected. Tools available: {list(tool_map.keys())}")
 
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
-
     # -----------------------------
     # SCHEMA REQUEST
     # -----------------------------
     if intent == "schema":
         try:
-            schema_tool = tool_map["GetSemanticModelSchema"]
+            print("📡 Requesting schema from MCP...")
 
+            schema_tool = tool_map["GetSemanticModelSchema"]
             schema_result = await schema_tool.ainvoke({
                 "artifactId": dataset_id
             })
 
-            schema = schema_result.artifact["structured_content"]
+            print("🔍 Raw MCP Response:")
+            print(schema_result)
+
+            if not hasattr(schema_result, "artifact") or not schema_result.artifact:
+                print("❌ MCP returned no artifact")
+                return
+
+            schema = schema_result.artifact.get("structured_content")
+
+            if not schema:
+                print("❌ structured_content missing in artifact")
+                print(schema_result.artifact)
+                return
+
             print_schema(schema)
 
         except Exception:
-            print("[]")
+            print("\n❌ ERROR while fetching schema:")
+            traceback.print_exc()
 
         return
 
     # -----------------------------
-    # COST REQUEST (FULL MCP PIPELINE)
+    # COST REQUEST
     # -----------------------------
     if intent == "cost":
         try:
-            # STEP 1 — Fetch Schema
+            print("📡 Fetching schema...")
+
             schema_tool = tool_map["GetSemanticModelSchema"]
             schema_result = await schema_tool.ainvoke({
                 "artifactId": dataset_id
@@ -159,10 +180,10 @@ async def main():
 
             full_schema = schema_result.artifact["structured_content"]
 
-            # STEP 2 — Build Schema Context for MCP
             schema_selection = build_schema_selection(full_schema)
 
-            # STEP 3 — Generate DAX from NL Question
+            print("🧠 Generating DAX from question...")
+
             generate_tool = tool_map["GenerateQuery"]
             dax_result = await generate_tool.ainvoke({
                 "artifactId": dataset_id,
@@ -172,22 +193,23 @@ async def main():
 
             dax_query = dax_result.artifact["query"]
 
-            print("\n🧠 Generated DAX:\n")
+            print("\nGenerated DAX:\n")
             print(dax_query)
 
-            # STEP 4 — Execute Query
+            print("📊 Executing query...")
+
             execute_tool = tool_map["ExecuteQuery"]
             data_result = await execute_tool.ainvoke({
                 "artifactId": dataset_id,
                 "daxQuery": dax_query
             })
 
-            print("\n📊 Query Result:\n")
+            print("\nQuery Result:\n")
             print(data_result.artifact)
 
         except Exception:
-            # STRICT — no fallback allowed
-            print("[]")
+            print("\n❌ ERROR during cost pipeline:")
+            traceback.print_exc()
 
         return
 
@@ -197,17 +219,3 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-
-the above code output:
-
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
-C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-
-Ask your question: Show schema of all tables
-🔎 Detected intent: schema
-🔐 Generating Azure access token...
-✅ Azure token generated successfully
-🔌 Connecting to MCP server...
-✅ Connected. Tools available: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
-[]
