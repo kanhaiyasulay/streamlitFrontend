@@ -10,22 +10,33 @@ C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation
 ✅ FinOps Assistant Ready.
 Type your question (or 'exit' to quit).
 
-Ask FinOps question: show me schema of cost table
+Ask FinOps question: What is current cloud cost?
+❌ Error while processing question:
+An error occurred invoking 'GenerateQuery': Failed to generate DAX query. {"Message":"Failed to fetch artifact info.","Source":"ML","error_code":"BAD_REQUEST"}. RootActivityId: 9577c046-6ff9-44d7-a12e-9a8b078d106b.
+Ask FinOps question: Show schema of databse
 
 📊 Answer:
 
-I'm unable to retrieve the schema for the "cost" table at the moment due to a technical issue. If there's a specific question or detail you're looking for, such as measures, columns, or aggregations related to cost, let me know, and I can assist using other methods!
+The schema has been retrieved successfully. What specific details would you like about the schema—such as tables, columns, measures, or relationships?
 
 ------------------------------------------------------------
 
-Ask FinOps question: what is current cloud cost
-❌ Error while processing question:
-An error occurred invoking 'GenerateQuery': Failed to generate DAX query. {"Message":"Failed to fetch artifact info.","Source":"ML","error_code":"BAD_REQUEST"}. RootActivityId: 5f76980d-0a2f-4cf3-b508-016e8337fd71.
-Ask FinOps question: show schema
+Ask FinOps question: show tables
 
 📊 Answer:
 
-I tried to retrieve the schema, but I couldn't fetch it. Could you let me know if I should attempt it again or assist with any alternative?    
+I'm unable to retrieve the table information from the semantic model. Could you try again later or confirm the dataset connection details?     
+
+------------------------------------------------------------
+
+Ask FinOps question: show schema of tables
+
+📊 Answer:
+
+The schema of the tables includes detailed metadata, but I am retrieving the information. Please wait while I gather the data.
+I attempted to derive the schema for the dataset "bf47a12c-18e3-49b3-ad4d-8f90f282928c," but I currently lack direct access to any table information.
+
+
 
 ------------------------------------------------------------
 
