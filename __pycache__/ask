@@ -1,0 +1,95 @@
+✔️ The 4 Most Common Reasons (and yours is 100% one of these)
+🔴 1️⃣ Service Principal NOT Added to Workspace (Most Likely)
+
+Even if Admin says “you have access” —
+Service Principal must be added explicitly.
+
+👉 In Fabric / Power BI:
+
+Workspace → Manage Access → Add →
+Add your App Registration Name
+Give it Contributor or Admin (Viewer is NOT enough)
+
+Service Principals do NOT inherit user permissions.
+
+🔴 2️⃣ Tenant Setting Not Enabled for Service Principals
+
+Admin must enable:
+
+Allow service principals to use Power BI APIs
+
+AND must allow it for the security group containing your App.
+
+If this is off → MCP connects but returns [].
+
+🔴 3️⃣ Dataset Is NOT In That Workspace
+
+This happens when:
+
+Report copied to another workspace
+
+Dataset lives in different workspace than you think
+
+You're using workspace from URL, not dataset workspace
+
+You MUST confirm:
+
+Dataset bf47a12c-18e3-49b3-ad4d-8f90f282928c
+exists inside:
+
+Workspace 816f9fea-3392-4ca9-8b02-4343d9e463b9
+
+🔴 4️⃣ Dataset Is Using Live Connection / Not a Fabric Semantic Model
+
+MCP ONLY works with:
+
+✔ Fabric Semantic Models
+✔ Imported models
+✔ Direct Lake
+
+It does NOT work with:
+
+Live connection to SSAS
+
+External models
+
+Thin reports
+
+
+
+
+🔎 Let’s Confirm Which Case This Is (Do This Quick Check)
+
+Ask your admin (or check yourself if you can):
+
+✔ Open Workspace → Settings → Advanced
+
+Confirm:
+
+Is this a Fabric workspace?
+
+Is the dataset listed under Semantic Models (not just Reports)?
+
+
+
+
+
+✅ So Where We Are Right Now
+
+Your pipeline is correct.
+Auth is correct.
+MCP usage is correct.
+
+The blocker is purely:
+
+Fabric Security Context ≠ Dataset Ownership Context
+
+This is extremely common when first using MCP.
+
+👉 Next Step
+
+Before changing code again, confirm just one thing:
+
+Can you see that App Registration listed inside Workspace → Manage Access?
+
+If not → that's the issue.
