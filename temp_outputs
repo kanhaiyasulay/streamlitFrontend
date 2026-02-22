@@ -1,16 +1,116 @@
-(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py  
 C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
   from pydantic.v1.fields import FieldInfo as FieldInfoV1
-
-Ask your question: show me schema of cost table
-🔎 Detected intent: schema
-Using Workspace ID: 816f9fea-3392-4ca9-8b02-4343d9e463b9
-Using Dataset ID: bf47a12c-18e3-49b3-ad4d-8f90f282928c
-🔐 Requesting Azure token...
+🔐 Generating Azure access token...
 ✅ Azure token generated successfully
 🔌 Connecting to MCP server...
-✅ Connected. Tools available: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
-📡 Requesting schema from MCP...
-🔍 Raw MCP Response:
-[]
-❌ MCP returned no artifact
+✅ Connected. Discovered 3 MCP tools
+📊 Fetching semantic model schema...
+
+================ DATASET SCHEMA ================
+
+📊 Tables:
+
+📁 calendar
+   └─ date (DateTime)
+   └─ year (Text)
+   └─ quarter_no (Text)
+   └─ quarter_yy_no (Text)
+   └─ month_no (Double)
+   └─ month (Text)
+   └─ month_yy_no (Text)
+   └─ week_no (Double)
+   └─ week_yy_no (Text)
+   └─ day_of_week (Text)
+   └─ month_start (DateTime)
+   └─ month_end (DateTime)
+   └─ quarter_start (DateTime)
+   └─ quarter_end (DateTime)
+
+📁 cost
+   └─ resId (Integer)
+   └─ date (DateTime)
+   └─ nok (Double)
+   └─ raw_usd (Double)
+   └─ category (Text)
+   └─ sub_category (Text)
+   └─ name (Text)
+   └─ customer_id (Text)
+   └─ kubeit (Integer)
+   └─ usd (Double)
+   └─ customer_name (Text)
+
+📁 customers
+   └─ customer_id (Text)
+   └─ customer_name (Text)
+   └─ source (Integer)
+
+📁 details
+   └─ resource_id (Integer)
+   └─ detail (Text)
+   └─ value (Text)
+   └─ startDate (DateTime)
+   └─ is_current (Integer)
+   └─ rn (Integer)
+   └─ endDate (DateTime)
+
+📁 regions
+   └─ continent (Text)
+   └─ location (Text)
+   └─ geographyId (Text)
+   └─ latitude (Text)
+   └─ longitude (Text)
+   └─ typeId (Text)
+   └─ isOpen (Text)
+   └─ hasGroundStation (Text)
+   └─ yearOpen (Text)
+   └─ dataResidency (Text)
+   └─ availableTo (Text)
+   └─ announcementLink (Text)
+   └─ productsByRegionLink (Text)
+   └─ productsByRegionLinkNonRegional (Text)
+   └─ availabilityZonesId (Text)
+   └─ id (Text)
+   └─ displayName (Text)
+
+📁 resources
+   └─ resource_id (Integer)
+   └─ subscription_id (Text)
+   └─ subscription_name (Text)
+   └─ location (Text)
+   └─ resource_group (Text)
+   └─ type (Text)
+   └─ name (Text)
+   └─ customer_id (Text)
+   └─ current_state (Text)
+   └─ last_updated_time (DateTime)
+   └─ customer_name (Text)
+
+📁 subscriptions
+   └─ subscription_id (Text)
+   └─ subscription_name (Text)
+   └─ management_group (Text)
+   └─ management_group_name (Text)
+
+📁 tags
+   └─ resource_id (Integer)
+   └─ product_centre (Text)
+   └─ solution_name (Text)
+   └─ environment (Text)
+   └─ project_number (Text)
+   └─ project_task (Text)
+   └─ owner (Text)
+   └─ verit-owneremail (Text)
+
+
+🔗 Relationships:
+
+'subscriptions'[subscription_id]  --->  'resources'[subscription_id]
+'tags'[resource_id]  --->  'resources'[resource_id]
+'regions'[id]  --->  'resources'[location]
+'resources'[resource_id]  --->  'tags'[resource_id]
+'resources'[resource_id]  --->  'cost'[resId]
+'calendar'[date]  --->  'cost'[date]
+'resources'[resource_id]  --->  'details'[resource_id]
+
+✅ MCP integration validated successfully.
