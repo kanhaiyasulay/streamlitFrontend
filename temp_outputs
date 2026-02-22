@@ -1,3 +1,16 @@
-[values] {'messages': [HumanMessage(content='Fetch the semantic model schema and describe all tables and measures.', additional_kwargs={}, response_metadata={}, id='3ea78293-7d93-473c-aeeb-d11b494c4ede')]}
-[updates] {'model': {'messages': [AIMessage(content='To retrieve and describe all tables and measures from the semantic model schema, I first need to fetch the semantic model schema data. Let me proceed.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 69, 'prompt_tokens': 1136, 'total_tokens': 1205, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DByqlTtX9gD5s3KnwLbAbBLX0bgVk', 'finish_reason': 'tool_calls', 'logprobs': None}, id='lc_run--019c8467-3bc5-75f0-b343-decd2fbad821-0', tool_calls=[{'name': 'GetSemanticModelSchema', 'args': {'artifactId': '465b121e-50c4-4242-b835-315936f6cdd6'}, 'id': 'call_uHGV8dG0THcWnjRhgBRXd82z', 'type': 'tool_call'}], invalid_tool_calls=[], usage_metadata={'input_tokens': 1136, 'output_tokens': 69, 'total_tokens': 1205, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}}
-[values] {'messages': [HumanMessage(content='Fetch the semantic model schema and describe all tables and measures.', additional_kwargs={}, response_metadata={}, id='3ea78293-7d93-473c-aeeb-d11b494c4ede'), AIMessage(content='To retrieve and describe all tables and measures from the semantic model schema, I first need to fetch the semantic model schema data. Let me proceed.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 69, 'prompt_tokens': 1136, 'total_tokens': 1205, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_provider': 'openai', 'model_name': 'gpt-4o-2024-11-20', 'system_fingerprint': 'fp_af7f7349a4', 'id': 'chatcmpl-DByqlTtX9gD5s3KnwLbAbBLX0bgVk', 'finish_reason': 'tool_calls', 'logprobs': None}, id='lc_run--019c8467-3bc5-75f0-b343-decd2fbad821-0', tool_calls=[{'name': 'GetSemanticModelSchema', 'args': {'artifactId': '465b121e-50c4-4242-b835-315936f6cdd6'}, 'id': 'call_uHGV8dG0THcWnjRhgBRXd82z', 'type': 'tool_call'}], invalid_tool_calls=[], usage_metadata={'input_tokens': 1136, 'output_tokens': 69, 'total_tokens': 1205, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}
+(mcp-help) PS C:\Users\KANSUL\mcp-help> python openAI_mcp.py
+C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+Ask your question: show me schema of cost table
+🔎 Detected intent: schema
+Using Workspace ID: 816f9fea-3392-4ca9-8b02-4343d9e463b9
+Using Dataset ID: bf47a12c-18e3-49b3-ad4d-8f90f282928c
+🔐 Requesting Azure token...
+✅ Azure token generated successfully
+🔌 Connecting to MCP server...
+✅ Connected. Tools available: ['ExecuteQuery', 'GenerateQuery', 'GetSemanticModelSchema']
+📡 Requesting schema from MCP...
+🔍 Raw MCP Response:
+[]
+❌ MCP returned no artifact
