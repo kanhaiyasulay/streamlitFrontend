@@ -7,16 +7,17 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
 
+# Load environment variables
 load_dotenv()
 
 # Fix SSL issues in corporate environments
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
 def get_azure_access_token():
-    """
-    Generates Azure AD token using Service Principal
-    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
@@ -33,6 +34,7 @@ def get_azure_access_token():
         "grant_type": "client_credentials",
     }
 
+    print("🔐 Requesting Azure token...")
     response = requests.post(url, data=payload)
     response.raise_for_status()
 
@@ -40,37 +42,20 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-def extract_mcp_schema(result):
-    """
-    Extract ONLY the MCP structured payload (ignore LangChain metadata)
-    """
+# -----------------------------
+# OPTIONAL: Extract raw MCP payload if needed
+# -----------------------------
+def extract_tool_artifacts(result):
+    artifacts = []
     for msg in result["messages"]:
-        if msg.type == "tool":
-            artifact = msg.artifact
-            if artifact and "structured_content" in artifact:
-                return artifact["structured_content"]
-
-    return None
+        if msg.type == "tool" and msg.artifact:
+            artifacts.append(msg.artifact)
+    return artifacts
 
 
-def print_schema(schema):
-    """
-    Pretty print schema for debugging / validation
-    """
-    print("\n================ DATASET SCHEMA ================\n")
-
-    print("📊 Tables:\n")
-    for table in schema["Tables"]:
-        print(f"📁 {table['Name']}")
-        for col in table["Columns"]:
-            print(f"   └─ {col['Name']} ({col['Type']})")
-        print()
-
-    print("\n🔗 Relationships:\n")
-    for rel in schema["ActiveRelationships"]:
-        print(f"{rel['PK']}  --->  {rel['FK']}")
-
-
+# -----------------------------
+# MAIN EXECUTION
+# -----------------------------
 async def main():
     print("🔐 Generating Azure access token...")
     token = get_azure_access_token()
@@ -92,7 +77,7 @@ async def main():
     tools = await client.get_tools()
     print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    # Initialize LLM (will be used later for reasoning)
+    # Initialize LLM
     model = init_chat_model(
         os.getenv("MODEL"),
         model_provider="openai",
@@ -100,45 +85,51 @@ async def main():
         base_url=os.getenv("ENDPOINT"),
     )
 
-    system_prompt = """
-    You are a FinOps analyst working with Power BI semantic models through MCP.
-    Always use MCP tools to inspect datasets. Never assume schema.
+    # System behavior for FinOps assistant
+    system_prompt = f"""
+    You are a FinOps analyst working with Power BI semantic models via Microsoft Fabric MCP.
+
+    Always use MCP tools to answer questions.
+    Never assume schema.
+    Always query real data before answering.
+    Provide business-friendly explanations.
+
+    Workspace ID: {os.getenv("POWERBI_WORKSPACE_ID")}
+    Dataset ID: {os.getenv("POWERBI_DATASET_ID")}
     """
 
+    # Create MCP-aware agent
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
 
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
+    print("\n✅ FinOps Assistant Ready.")
+    print("Type your question (or 'exit' to quit).\n")
 
-    query = f"""
-    Using the Power BI MCP tools, answer the following:
+    # Interactive Loop
+    while True:
+        user_question = input("Ask FinOps question: ").strip()
 
-    What is the schema of cost tabel
+        if user_question.lower() in ["exit", "quit"]:
+            print("👋 Exiting FinOps assistant.")
+            break
 
-    Workspace ID: {workspace_id}
-    Dataset ID: {dataset_id}
-    """
+        try:
+            result = await agent_graph.ainvoke(
+                {"messages": [{"role": "user", "content": user_question}]}
+            )
 
-    print("📊 Fetching semantic model schema...")
-    result = await agent_graph.ainvoke(
-        {"messages": [{"role": "user", "content": query}]}
-    )
+            # Print final LLM answer
+            final_answer = result["messages"][-1].content
+            print("\n📊 Answer:\n")
+            print(final_answer)
+            print("\n" + "-" * 60 + "\n")
 
-    # ✅ Extract REAL DATA
-    schema = extract_mcp_schema(result)
-
-    if not schema:
-        print("❌ No schema returned from MCP")
-        return
-
-    print_schema(schema)
-
-    # You will reuse this schema for FinOps reasoning later
-    print("\n✅ MCP integration validated successfully.\n")
+        except Exception as e:
+            print("❌ Error while processing question:")
+            print(e)
 
 
+# -----------------------------
+# ENTRY POINT
+# -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
