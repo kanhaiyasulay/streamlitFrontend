@@ -35,11 +35,36 @@ def get_azure_access_token():
 
 
 # -----------------------------
+# NORMALIZE DAX FOR REST API
+# -----------------------------
+def normalize_dax_for_execute_api(dax: str) -> str:
+    """
+    Convert LLM DAX into executeQueries-safe syntax.
+    Power BI REST API only supports SUMMARIZECOLUMNS queries.
+    """
+
+    # Remove unsupported constructs
+    dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
+
+    # Replace SUMMARIZE -> SUMMARIZECOLUMNS
+    dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
+
+    # Remove FILTER() blocks (API often rejects them)
+    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+
+    # Ensure starts with EVALUATE
+    if not dax.strip().upper().startswith("EVALUATE"):
+        dax = "EVALUATE\n" + dax
+
+    return dax.strip()
+
+
+# -----------------------------
 # EXECUTE DAX (Power BI REST)
 # -----------------------------
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
-
     token = get_azure_access_token()
 
     url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
@@ -56,11 +81,7 @@ def execute_dax_query(dax_query: str):
 
     response = requests.post(url, headers=headers, json=body, timeout=60)
     response.raise_for_status()
-
-    data = response.json()
-    # rows = data["results"][0]["tables"][0]["rows"]
-    # return rows
-    return data
+    return response.json()
 
 
 # -----------------------------
@@ -123,16 +144,13 @@ async def finops_setup():
     system_prompt = """
 You are a FinOps assistant.
 
-You must:
-- Use schema metadata to understand dataset
-- Generate valid DAX queries when calculations are requested
-- Never hallucinate tables/columns
-
-FINOPS TIME RULES:
-- Cloud biling data is delayed by ingestion pipelines
-- NEVER use TODAY() or system dates for cost analysis
-- ALWAYS determine the latest available date using MAX(cost[date])
-- If user asks for "yesterday's cost", interpret it as "latest available billing date"
+RULES:
+- Billing data is delayed; NEVER use TODAY().
+- Always anchor time using MAX(cost[date]).
+- Cost table is financial truth.
+- Generate ONLY executeQueries-safe DAX.
+- ALWAYS use SUMMARIZECOLUMNS.
+- Never use VAR, RETURN, FILTER, or SUMMARIZE.
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -140,11 +158,10 @@ FINOPS TIME RULES:
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    print("📊 Loading schema from MCP (one-time)...")
+    print("📊 Loading schema from MCP...")
 
     schema_query = f"""
 Inspect the semantic model.
-
 Workspace ID: {workspace_id}
 Dataset ID: {dataset_id}
 """
@@ -155,8 +172,7 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    print("✅ Schema cached successfully")
-
+    print("✅ Schema cached")
     return FinOpsContext(model, schema)
 
 
@@ -168,39 +184,32 @@ async def chat_instance_stream(user_question, context: FinOpsContext):
     schema_json = json.dumps(context.schema, indent=2)
 
     prompt = (
-        "You are a FinOps expert.\n\n"
-        "Answer the user question using this schema.\n"
-        "If calculation is requested, generate a DAX query.\n\n"
-        "Return format:\n\n"
-        "Answer:\n"
-        "<business explanation>\n\n"
-        "DAX Query (if applicable):\n"
-        "```DAX\n"
-        "<query>\n"
-        "```\n\n"
-        "Schema:\n"
-        + schema_json +
-        "\n\nUser Question:\n"
-        + user_question
+        "Answer using this schema and generate SAFE DAX.\n"
+        "Use SUMMARIZECOLUMNS only.\n\n"
+        "Schema:\n" + schema_json +
+        "\n\nUser Question:\n" + user_question
     )
 
     response = await context.model.ainvoke(prompt)
     llm_text = response.content
 
-    # Try executing DAX if present
     dax_query = extract_dax_from_response(llm_text)
 
     if dax_query:
         try:
-            rows = execute_dax_query(dax_query)
+            safe_dax = normalize_dax_for_execute_api(dax_query)
+
+            print("\nExecuting Safe DAX:\n", safe_dax)
+
+            result = execute_dax_query(safe_dax)
 
             return (
-                llm_text
-                + "\n\n---\n### ✅ Live Result\n"
-                + json.dumps(rows, indent=2)
+                llm_text +
+                "\n\n---\n### ✅ Live Result\n" +
+                json.dumps(result, indent=2)
             )
 
         except Exception as e:
-            return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
+            return llm_text + f"\n\n⚠️ Execution failed: {str(e)}"
 
     return llm_text
