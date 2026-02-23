@@ -1,16 +1,14 @@
 import os
-import asyncio
+import json
 import certifi
 import requests
-import json
+import re
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
 
 load_dotenv()
-
-# Fix SSL issues in corporate environments
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
@@ -18,15 +16,9 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 # AUTHENTICATION
 # -----------------------------
 def get_azure_access_token():
-    """
-    Generates Azure AD token using Service Principal
-    """
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
     client_secret = os.getenv("AZURE_CLIENT_SECRET")
-
-    if not tenant or not client_id or not client_secret:
-        raise ValueError("Azure credentials missing in .env")
 
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
@@ -39,92 +31,87 @@ def get_azure_access_token():
 
     response = requests.post(url, data=payload)
     response.raise_for_status()
-
-    print("✅ Azure token generated successfully")
     return response.json()["access_token"]
 
 
 # -----------------------------
-# MCP RESULT EXTRACTION
+# EXECUTE DAX (Power BI REST)
+# -----------------------------
+def execute_dax_query(dax_query: str):
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+
+    token = get_azure_access_token()
+
+    url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "queries": [{"query": dax_query}],
+        "serializerSettings": {"includeNulls": True},
+    }
+
+    response = requests.post(url, headers=headers, json=body, timeout=60)
+    response.raise_for_status()
+
+    data = response.json()
+    rows = data["results"][0]["tables"][0]["rows"]
+    return rows
+
+
+# -----------------------------
+# EXTRACT MCP SCHEMA
 # -----------------------------
 def extract_mcp_schema(result):
-    """
-    Extract ONLY the MCP structured payload (ignore LangChain metadata)
-    """
     for msg in result["messages"]:
         if msg.type == "tool":
             artifact = msg.artifact
             if artifact and "structured_content" in artifact:
                 return artifact["structured_content"]
-
     return None
 
 
 # -----------------------------
-# LLM INTERPRETATION LAYER
+# EXTRACT DAX FROM LLM RESPONSE
 # -----------------------------
-async def interpret_schema_with_llm(model, schema, user_question):
-    """
-    Let LLM decide what to show based on user intent
-    """
-
-    prompt = f"""
-You are a FinOps analyst working with a Power BI semantic model.
-
-You are given the FULL dataset schema in JSON format below.
-
-IMPORTANT RULES:
-- Do NOT dump entire schema unless user explicitly asks.
-- Filter only what is relevant.
-- If user asks for a specific table → show only that table.
-- If user asks for list of tables → summarize names only.
-- If user asks analytical question → explain which fields would be used.
-- Be concise and business-friendly.
-
-SCHEMA:
-{json.dumps(schema, indent=2)}
-
-USER QUESTION:
-{user_question}
-"""
-
-    response = await model.ainvoke(prompt)
-    return response.content
+def extract_dax_from_response(llm_text: str):
+    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
 
 
 # -----------------------------
-# MAIN EXECUTION
+# CONTEXT HOLDER
 # -----------------------------
-async def main():
+class FinOpsContext:
+    def __init__(self, model, schema):
+        self.model = model
+        self.schema = schema
 
-    # 🔹 Ask user question dynamically
-    user_question = input("\n💬 Ask your FinOps question: ")
 
-    print("\n🔐 Generating Azure access token...")
+# -----------------------------
+# INITIAL SETUP (RUNS ONCE)
+# -----------------------------
+async def finops_setup():
+
+    print("🔐 Getting Azure Token...")
     token = get_azure_access_token()
 
-    # -----------------------------
-    # CONNECT TO MCP
-    # -----------------------------
     servers = {
         "powerbi-remote": {
             "transport": "http",
             "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
+            "headers": {"Authorization": f"Bearer {token}"}
         }
     }
 
-    print("🔌 Connecting to MCP server...")
     client = MultiServerMCPClient(servers)
-
     tools = await client.get_tools()
-    print(f"✅ Connected. Discovered {len(tools)} MCP tools")
 
-    # -----------------------------
-    # INITIALIZE LLM
-    # -----------------------------
     model = init_chat_model(
         os.getenv("MODEL"),
         model_provider="openai",
@@ -135,11 +122,10 @@ async def main():
     system_prompt = """
 You are a FinOps assistant.
 
-You MUST:
-1. Use MCP tools to retrieve schema metadata.
-2. NEVER assume schema.
-3. After retrieving schema, interpret it to answer user question.
-4. Only return relevant information.
+You must:
+- Use schema metadata to understand dataset
+- Generate valid DAX queries when calculations are requested
+- Never hallucinate tables/columns
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -147,10 +133,7 @@ You MUST:
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    # -----------------------------
-    # STEP 1 → ALWAYS FETCH SCHEMA FROM MCP
-    # -----------------------------
-    print("📊 Retrieving semantic model metadata from MCP...")
+    print("📊 Loading schema from MCP (one-time)...")
 
     schema_query = f"""
 Inspect the semantic model.
@@ -165,21 +148,52 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    if not schema:
-        print("❌ Failed to retrieve schema from MCP")
-        return
+    print("✅ Schema cached successfully")
 
-    print("✅ Schema retrieved. Letting LLM interpret...")
-
-    # -----------------------------
-    # STEP 2 → LLM DECIDES WHAT TO SHOW
-    # -----------------------------
-    answer = await interpret_schema_with_llm(model, schema, user_question)
-
-    print("\n================ ANSWER ================\n")
-    print(answer)
-    print("\n=======================================\n")
+    return FinOpsContext(model, schema)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# -----------------------------
+# CHAT FUNCTION
+# -----------------------------
+async def chat_instance_stream(user_question, context: FinOpsContext):
+
+    schema_json = json.dumps(context.schema, indent=2)
+
+    prompt = (
+        "You are a FinOps expert.\n\n"
+        "Answer the user question using this schema.\n"
+        "If calculation is requested, generate a DAX query.\n\n"
+        "Return format:\n\n"
+        "Answer:\n"
+        "<business explanation>\n\n"
+        "DAX Query (if applicable):\n"
+        "```DAX\n"
+        "<query>\n"
+        "```\n\n"
+        "Schema:\n"
+        + schema_json +
+        "\n\nUser Question:\n"
+        + user_question
+    )
+
+    response = await context.model.ainvoke(prompt)
+    llm_text = response.content
+
+    # Try executing DAX if present
+    dax_query = extract_dax_from_response(llm_text)
+
+    if dax_query:
+        try:
+            rows = execute_dax_query(dax_query)
+
+            return (
+                llm_text
+                + "\n\n---\n### ✅ Live Result\n"
+                + json.dumps(rows, indent=2)
+            )
+
+        except Exception as e:
+            return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
+
+    return llm_text
