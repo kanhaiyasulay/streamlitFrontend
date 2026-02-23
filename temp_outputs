@@ -58,8 +58,9 @@ def execute_dax_query(dax_query: str):
     response.raise_for_status()
 
     data = response.json()
-    rows = data["results"][0]["tables"][0]["rows"]
-    return rows
+    # rows = data["results"][0]["tables"][0]["rows"]
+    # return rows
+    return data
 
 
 # -----------------------------
@@ -126,6 +127,12 @@ You must:
 - Use schema metadata to understand dataset
 - Generate valid DAX queries when calculations are requested
 - Never hallucinate tables/columns
+
+FINOPS TIME RULES:
+- Cloud biling data is delayed by ingestion pipelines
+- NEVER use TODAY() or system dates for cost analysis
+- ALWAYS determine the latest available date using MAX(cost[date])
+- If user asks for "yesterday's cost", interpret it as "latest available billing date"
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
