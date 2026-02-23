@@ -3,6 +3,7 @@ import json
 import certifi
 import requests
 import re
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
@@ -13,7 +14,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
 # -----------------------------
-# AUTHENTICATION
+# AUTH
 # -----------------------------
 def get_azure_access_token():
     tenant = os.getenv("AZURE_TENANT_ID")
@@ -35,33 +36,7 @@ def get_azure_access_token():
 
 
 # -----------------------------
-# NORMALIZE DAX FOR REST API
-# -----------------------------
-def normalize_dax_for_execute_api(dax: str) -> str:
-    """
-    Convert LLM DAX into executeQueries-safe syntax.
-    Power BI REST API only supports SUMMARIZECOLUMNS queries.
-    """
-
-    # Remove unsupported constructs
-    dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
-    dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
-
-    # Replace SUMMARIZE -> SUMMARIZECOLUMNS
-    dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
-
-    # Remove FILTER() blocks (API often rejects them)
-    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
-
-    # Ensure starts with EVALUATE
-    if not dax.strip().upper().startswith("EVALUATE"):
-        dax = "EVALUATE\n" + dax
-
-    return dax.strip()
-
-
-# -----------------------------
-# EXECUTE DAX (Power BI REST)
+# EXECUTE DAX
 # -----------------------------
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
@@ -82,6 +57,61 @@ def execute_dax_query(dax_query: str):
     response = requests.post(url, headers=headers, json=body, timeout=60)
     response.raise_for_status()
     return response.json()
+
+
+# -----------------------------
+# SAFE DAX NORMALIZATION
+# -----------------------------
+def normalize_dax_for_execute_api(dax: str) -> str:
+    """
+    Remove constructs unsupported by executeQueries API.
+    """
+
+    dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
+    dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
+
+    # remove FILTER blocks (API unstable with them)
+    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+
+    if not dax.strip().upper().startswith("EVALUATE"):
+        dax = "EVALUATE\n" + dax
+
+    return dax.strip()
+
+
+# -----------------------------
+# TIME INTENT → REAL DATE FILTER
+# -----------------------------
+def apply_time_filter_if_needed(dax: str, question: str) -> str:
+    """
+    Convert 'last 3 months', 'recent', etc. into literal filters.
+    """
+
+    q = question.lower()
+
+    today = datetime.today()
+
+    if "last 3 month" in q:
+        start = today - timedelta(days=90)
+
+    elif "last month" in q:
+        start = today - timedelta(days=30)
+
+    elif "yesterday" in q or "recent" in q or "latest" in q:
+        # FinOps rule: use latest available billing date
+        return dax  # handled by MAX(cost[date]) logic
+
+    else:
+        return dax
+
+    filter_clause = (
+        f"'cost'[date] >= DATE({start.year},{start.month},{start.day})"
+    )
+
+    dax = dax.replace(")", f", {filter_clause})")
+
+    return dax
 
 
 # -----------------------------
@@ -116,11 +146,11 @@ class FinOpsContext:
 
 
 # -----------------------------
-# INITIAL SETUP (RUNS ONCE)
+# INITIAL SETUP
 # -----------------------------
 async def finops_setup():
 
-    print("🔐 Getting Azure Token...")
+    print("🔐 Authenticating...")
     token = get_azure_access_token()
 
     servers = {
@@ -142,15 +172,13 @@ async def finops_setup():
     )
 
     system_prompt = """
-You are a FinOps assistant.
+You are a FinOps analytics assistant.
 
-RULES:
-- Billing data is delayed; NEVER use TODAY().
+Rules:
+- Billing data is delayed. NEVER use TODAY().
 - Always anchor time using MAX(cost[date]).
-- Cost table is financial truth.
-- Generate ONLY executeQueries-safe DAX.
-- ALWAYS use SUMMARIZECOLUMNS.
-- Never use VAR, RETURN, FILTER, or SUMMARIZE.
+- Only generate SUMMARIZECOLUMNS-style DAX.
+- Do NOT use VAR, RETURN, FILTER, or time-intelligence functions.
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -172,7 +200,7 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    print("✅ Schema cached")
+    print("✅ Schema loaded")
     return FinOpsContext(model, schema)
 
 
@@ -184,7 +212,7 @@ async def chat_instance_stream(user_question, context: FinOpsContext):
     schema_json = json.dumps(context.schema, indent=2)
 
     prompt = (
-        "Answer using this schema and generate SAFE DAX.\n"
+        "Generate SAFE executeQueries-compatible DAX.\n"
         "Use SUMMARIZECOLUMNS only.\n\n"
         "Schema:\n" + schema_json +
         "\n\nUser Question:\n" + user_question
@@ -198,16 +226,13 @@ async def chat_instance_stream(user_question, context: FinOpsContext):
     if dax_query:
         try:
             safe_dax = normalize_dax_for_execute_api(dax_query)
+            safe_dax = apply_time_filter_if_needed(safe_dax, user_question)
 
             print("\nExecuting Safe DAX:\n", safe_dax)
 
             result = execute_dax_query(safe_dax)
 
-            return (
-                llm_text +
-                "\n\n---\n### ✅ Live Result\n" +
-                json.dumps(result, indent=2)
-            )
+            return llm_text + "\n\n---\n### ✅ Live Result\n" + json.dumps(result, indent=2)
 
         except Exception as e:
             return llm_text + f"\n\n⚠️ Execution failed: {str(e)}"
