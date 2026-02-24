@@ -3,7 +3,6 @@ import json
 import certifi
 import requests
 import re
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
@@ -13,9 +12,9 @@ load_dotenv()
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
-# ============================================================
-# AUTH
-# ============================================================
+# -----------------------------
+# AUTHENTICATION
+# -----------------------------
 def get_azure_access_token():
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
@@ -35,11 +34,12 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-# ============================================================
-# EXECUTE DAX
-# ============================================================
+# -----------------------------
+# EXECUTE DAX (Power BI REST)
+# -----------------------------
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
+
     token = get_azure_access_token()
 
     url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
@@ -56,95 +56,16 @@ def execute_dax_query(dax_query: str):
 
     response = requests.post(url, headers=headers, json=body, timeout=60)
     response.raise_for_status()
-    return response.json()
+
+    data = response.json()
+    # rows = data["results"][0]["tables"][0]["rows"]
+    # return rows
+    return data
 
 
-# ============================================================
-# STRICT TIME PARSER
-# ============================================================
-def parse_time_range(question: str):
-    q = question.lower()
-
-    pattern = r"last\s+(\d+)?\s*(day|days|week|weeks|month|months|year|years)"
-    match = re.search(pattern, q)
-
-    if match:
-        value = int(match.group(1)) if match.group(1) else 1
-        unit = match.group(2)
-        return value, unit
-
-    if "yesterday" in q:
-        return 1, "days"
-
-    return None, None
-
-
-# ============================================================
-# BUILD SAFE DATE FILTER
-# ============================================================
-def build_date_filter(question: str):
-
-    value, unit = parse_time_range(question)
-
-    if value is None:
-        return None
-
-    today = datetime.today()
-
-    if "day" in unit:
-        start_date = today - timedelta(days=value)
-    elif "week" in unit:
-        start_date = today - timedelta(weeks=value)
-    elif "month" in unit:
-        start_date = today - timedelta(days=30 * value)
-    elif "year" in unit:
-        start_date = today - timedelta(days=365 * value)
-    else:
-        return None
-
-    return f"'cost'[date] >= DATE({start_date.year},{start_date.month},{start_date.day})"
-
-
-# ============================================================
-# HARD DAX SANITIZER (NO EXCEPTIONS)
-# ============================================================
-def sanitize_dax(dax: str, question: str):
-
-    # Remove unsupported constructs
-    dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
-    dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
-    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
-    dax = re.sub(r"DATESINPERIOD\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
-    dax = re.sub(r"TODAY\(\)", "", dax, flags=re.IGNORECASE)
-    dax = re.sub(r"LASTDATE\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
-
-    dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
-
-    if not dax.strip().upper().startswith("EVALUATE"):
-        dax = "EVALUATE\n" + dax
-
-    # Inject safe date filter
-    date_filter = build_date_filter(question)
-
-    if date_filter:
-        dax = dax.replace(")", f", {date_filter})", 1)
-
-    return dax.strip()
-
-
-# ============================================================
-# EXTRACT DAX FROM LLM
-# ============================================================
-def extract_dax_from_response(llm_text: str):
-    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return None
-
-
-# ============================================================
+# -----------------------------
 # EXTRACT MCP SCHEMA
-# ============================================================
+# -----------------------------
 def extract_mcp_schema(result):
     for msg in result["messages"]:
         if msg.type == "tool":
@@ -154,21 +75,31 @@ def extract_mcp_schema(result):
     return None
 
 
-# ============================================================
+# -----------------------------
+# EXTRACT DAX FROM LLM RESPONSE
+# -----------------------------
+def extract_dax_from_response(llm_text: str):
+    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+# -----------------------------
 # CONTEXT HOLDER
-# ============================================================
+# -----------------------------
 class FinOpsContext:
     def __init__(self, model, schema):
         self.model = model
         self.schema = schema
 
 
-# ============================================================
-# INITIAL SETUP
-# ============================================================
+# -----------------------------
+# INITIAL SETUP (RUNS ONCE)
+# -----------------------------
 async def finops_setup():
 
-    print("🔐 Authenticating...")
+    print("🔐 Getting Azure Token...")
     token = get_azure_access_token()
 
     servers = {
@@ -190,13 +121,18 @@ async def finops_setup():
     )
 
     system_prompt = """
-You are a FinOps analytics engine.
+You are a FinOps assistant.
 
-Rules:
-- Generate ONLY SUMMARIZECOLUMNS DAX.
-- Never use VAR, RETURN, FILTER, DATESINPERIOD, LASTDATE, TODAY.
-- Time filtering will be handled externally.
-- Only focus on aggregation and grouping.
+You must:
+- Use schema metadata to understand dataset
+- Generate valid DAX queries when calculations are requested
+- Never hallucinate tables/columns
+
+FINOPS TIME RULES:
+- Cloud biling data is delayed by ingestion pipelines
+- NEVER use TODAY() or system dates for cost analysis
+- ALWAYS determine the latest available date using MAX(cost[date])
+- If user asks for "yesterday's cost", interpret it as "latest available billing date"
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -204,8 +140,11 @@ Rules:
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
+    print("📊 Loading schema from MCP (one-time)...")
+
     schema_query = f"""
 Inspect the semantic model.
+
 Workspace ID: {workspace_id}
 Dataset ID: {dataset_id}
 """
@@ -216,40 +155,116 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    print("✅ Schema loaded")
+    print("✅ Schema cached successfully")
+
     return FinOpsContext(model, schema)
 
 
-# ============================================================
+# -----------------------------
 # CHAT FUNCTION
-# ============================================================
+# -----------------------------
 async def chat_instance_stream(user_question, context: FinOpsContext):
 
     schema_json = json.dumps(context.schema, indent=2)
 
     prompt = (
-        "Generate SAFE executeQueries-compatible DAX.\n"
-        "Use SUMMARIZECOLUMNS only.\n\n"
-        "Schema:\n" + schema_json +
-        "\n\nUser Question:\n" + user_question
+        "You are a FinOps expert.\n\n"
+        "Answer the user question using this schema.\n"
+        "If calculation is requested, generate a DAX query.\n\n"
+        "Return format:\n\n"
+        "Answer:\n"
+        "<business explanation>\n\n"
+        "DAX Query (if applicable):\n"
+        "```DAX\n"
+        "<query>\n"
+        "```\n\n"
+        "Schema:\n"
+        + schema_json +
+        "\n\nUser Question:\n"
+        + user_question
     )
 
     response = await context.model.ainvoke(prompt)
     llm_text = response.content
 
+    # Try executing DAX if present
     dax_query = extract_dax_from_response(llm_text)
 
     if dax_query:
         try:
-            safe_dax = sanitize_dax(dax_query, user_question)
+            rows = execute_dax_query(dax_query)
 
-            print("\nExecuting Safe DAX:\n", safe_dax)
-
-            result = execute_dax_query(safe_dax)
-
-            return llm_text + "\n\n---\n### ✅ Live Result\n" + json.dumps(result, indent=2)
+            return (
+                llm_text
+                + "\n\n---\n### ✅ Live Result\n"
+                + json.dumps(rows, indent=2)
+            )
 
         except Exception as e:
-            return llm_text + f"\n\n⚠️ Execution failed: {str(e)}"
+            return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
 
     return llm_text
+
+ui_fin.py:
+import streamlit as st
+import asyncio
+from finops_agent import chat_instance_stream,finops_setup
+ 
+Login_info={"admin":"pass123"}
+ 
+@st.cache_resource
+def get_cached_agent():
+    return asyncio.run(finops_setup())
+ 
+def check_login():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated=False
+    if not st.session_state.authenticated:
+        st.title("Login to Chatbot")
+        user=st.text_input("Username")
+        passwd=st.text_input("Password", type="password")
+ 
+        if st.button("Login"):
+            if user in Login_info and Login_info[user]==passwd:
+                st.session_state.authenticated=True
+                st.rerun()
+            else:
+                st.error("Invalid Username or password")
+        return False
+    return True
+ 
+st.title("Cloud Operational Agent")
+st.divider()
+ 
+if check_login():
+    with st.sidebar:
+        st.title("Configuration")
+        model_name=st.selectbox(
+            "Select Provider",
+            ["meta/Llama-4-Scout-17B-16E-Instruct","openai/gpt-5","deepseek/DeepSeek-V3-0324"]
+        )
+        temp=st.slider("Temperature",0.0,2.0,0.7,0.1)
+ 
+        st.divider()
+        if st.button("Logout"):
+            st.session_state.authenticated=False
+            st.rerun()
+    chat_agent=get_cached_agent()
+   
+    st.title(f"Chatting with {"LLM"}")
+    if "messages" not in st.session_state:
+        st.session_state.messages=[]
+   
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+   
+    if prompt :=st.chat_input("Type your response here"):
+        st.chat_message("user").markdown(prompt)
+        st.session_state.messages.append({"role":"user","content":prompt})
+        full_response=asyncio.run(chat_instance_stream(prompt,chat_agent))
+        with st.chat_message("assistant"):
+            st.markdown(full_response)
+        # with st.chat_message("assistant"):
+        #     full_response=st.write_stream(chat_instance_stream(prompt,chat_agent))
+        st.session_state.messages.append({"role":"assistant","content":full_response})
