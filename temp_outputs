@@ -39,7 +39,6 @@ def get_azure_access_token():
 # -----------------------------
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
-
     token = get_azure_access_token()
 
     url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
@@ -57,10 +56,7 @@ def execute_dax_query(dax_query: str):
     response = requests.post(url, headers=headers, json=body, timeout=60)
     response.raise_for_status()
 
-    data = response.json()
-    # rows = data["results"][0]["tables"][0]["rows"]
-    # return rows
-    return data
+    return response.json()
 
 
 # -----------------------------
@@ -83,6 +79,19 @@ def extract_dax_from_response(llm_text: str):
     if match:
         return match.group(1).strip()
     return None
+
+
+# -----------------------------
+# EXTRACT NUMERIC RESULT CLEANLY
+# -----------------------------
+def extract_numeric_result(data):
+    try:
+        rows = data["results"][0]["tables"][0]["rows"][0]
+        key = list(rows.keys())[0]
+        value = rows[key]
+        return key, value
+    except Exception:
+        return None, None
 
 
 # -----------------------------
@@ -123,24 +132,22 @@ async def finops_setup():
     system_prompt = """
 You are a FinOps assistant.
 
-You must:
+Rules:
 - Use schema metadata to understand dataset
 - Generate valid DAX queries when calculations are requested
-- Never hallucinate tables/columns
+- Never hallucinate tables or columns
 
-FINOPS TIME RULES:
-- Cloud biling data is delayed by ingestion pipelines
-- NEVER use TODAY() or system dates for cost analysis
-- ALWAYS determine the latest available date using MAX(cost[date])
-- If user asks for "yesterday's cost", interpret it as "latest available billing date"
+TIME RULES:
+- Never use TODAY()
+- Always determine latest available billing date using MAX(cost[date])
 """
 
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
+    agent_graph = create_agent(model, tools, system_prompt=system_prompt)
 
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    print("📊 Loading schema from MCP (one-time)...")
+    print("📊 Loading schema from MCP...")
 
     schema_query = f"""
 Inspect the semantic model.
@@ -161,23 +168,16 @@ Dataset ID: {dataset_id}
 
 
 # -----------------------------
-# CHAT FUNCTION
+# CHAT FUNCTION (CLEAN OUTPUT)
 # -----------------------------
 async def chat_instance_stream(user_question, context: FinOpsContext):
 
-    schema_json = json.dumps(context.schema, indent=2)
+    schema_json = json.dumps(context.schema)
 
     prompt = (
         "You are a FinOps expert.\n\n"
-        "Answer the user question using this schema.\n"
-        "If calculation is requested, generate a DAX query.\n\n"
-        "Return format:\n\n"
-        "Answer:\n"
-        "<business explanation>\n\n"
-        "DAX Query (if applicable):\n"
-        "```DAX\n"
-        "<query>\n"
-        "```\n\n"
+        "Use the schema to answer the question.\n"
+        "If calculation is required, generate ONLY a DAX query inside ```DAX``` block.\n\n"
         "Schema:\n"
         + schema_json +
         "\n\nUser Question:\n"
@@ -187,20 +187,25 @@ async def chat_instance_stream(user_question, context: FinOpsContext):
     response = await context.model.ainvoke(prompt)
     llm_text = response.content
 
-    # Try executing DAX if present
     dax_query = extract_dax_from_response(llm_text)
 
-    if dax_query:
-        try:
-            rows = execute_dax_query(dax_query)
+    if not dax_query:
+        return "⚠️ Unable to generate query for this request."
 
-            return (
-                llm_text
-                + "\n\n---\n### ✅ Live Result\n"
-                + json.dumps(rows, indent=2)
-            )
+    try:
+        raw_result = execute_dax_query(dax_query)
+        key, value = extract_numeric_result(raw_result)
 
-        except Exception as e:
-            return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
+        if value is None:
+            return "⚠️ Could not parse result."
 
-    return llm_text
+        formatted_value = f"{value:,.2f}"
+
+        return f"""
+## 💰 Cloud Cost Summary
+
+### {formatted_value} NOK
+"""
+
+    except Exception as e:
+        return f"⚠️ Query execution failed: {str(e)}"
