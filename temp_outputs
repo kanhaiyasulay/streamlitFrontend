@@ -14,7 +14,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
 # -----------------------------
-# AUTH
+# AUTHENTICATION
 # -----------------------------
 def get_azure_access_token():
     tenant = os.getenv("AZURE_TENANT_ID")
@@ -36,7 +36,7 @@ def get_azure_access_token():
 
 
 # -----------------------------
-# EXECUTE DAX
+# EXECUTE DAX (REST API)
 # -----------------------------
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
@@ -64,16 +64,20 @@ def execute_dax_query(dax_query: str):
 # -----------------------------
 def normalize_dax_for_execute_api(dax: str) -> str:
     """
-    Remove constructs unsupported by executeQueries API.
+    Remove unsupported constructs for executeQueries API.
     """
 
+    # Remove VAR and RETURN blocks
     dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
     dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
+
+    # Replace SUMMARIZE with SUMMARIZECOLUMNS
     dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
 
-    # remove FILTER blocks (API unstable with them)
+    # Remove FILTER blocks
     dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
 
+    # Ensure starts with EVALUATE
     if not dax.strip().upper().startswith("EVALUATE"):
         dax = "EVALUATE\n" + dax
 
@@ -81,37 +85,86 @@ def normalize_dax_for_execute_api(dax: str) -> str:
 
 
 # -----------------------------
-# TIME INTENT → REAL DATE FILTER
+# TIME PARSER
 # -----------------------------
-def apply_time_filter_if_needed(dax: str, question: str) -> str:
+def parse_time_range(question: str):
     """
-    Convert 'last 3 months', 'recent', etc. into literal filters.
+    Extract time expressions like:
+    'last 3 days', 'last 2 months', etc.
+    Returns (value, unit)
     """
 
     q = question.lower()
 
+    pattern = r"last\s+(\d+)?\s*(day|days|week|weeks|month|months|year|years|quarter|quarters)"
+    match = re.search(pattern, q)
+
+    if match:
+        value = int(match.group(1)) if match.group(1) else 1
+        unit = match.group(2)
+        return value, unit
+
+    # Handle special phrases
+    if "last month" in q:
+        return 1, "months"
+    if "last week" in q:
+        return 1, "weeks"
+    if "last quarter" in q:
+        return 3, "months"
+    if "yesterday" in q:
+        return 1, "days"
+
+    return None, None
+
+
+# -----------------------------
+# APPLY SAFE DATE FILTER
+# -----------------------------
+def apply_time_filter_if_needed(dax: str, question: str) -> str:
+
+    value, unit = parse_time_range(question)
+
+    if value is None:
+        return dax
+
     today = datetime.today()
 
-    if "last 3 month" in q:
-        start = today - timedelta(days=90)
+    if "day" in unit:
+        start_date = today - timedelta(days=value)
 
-    elif "last month" in q:
-        start = today - timedelta(days=30)
+    elif "week" in unit:
+        start_date = today - timedelta(weeks=value)
 
-    elif "yesterday" in q or "recent" in q or "latest" in q:
-        # FinOps rule: use latest available billing date
-        return dax  # handled by MAX(cost[date]) logic
+    elif "month" in unit:
+        start_date = today - timedelta(days=30 * value)
+
+    elif "year" in unit:
+        start_date = today - timedelta(days=365 * value)
 
     else:
         return dax
 
-    filter_clause = (
-        f"'cost'[date] >= DATE({start.year},{start.month},{start.day})"
-    )
+    # Remove unsafe time functions from LLM
+    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+    dax = re.sub(r"TODAY\(\)", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"DATE\s*\(.*?\)", "", dax, flags=re.IGNORECASE)
 
-    dax = dax.replace(")", f", {filter_clause})")
+    literal_filter = f"'cost'[date] >= DATE({start_date.year},{start_date.month},{start_date.day})"
+
+    # Inject filter safely into SUMMARIZECOLUMNS
+    dax = dax.replace(")", f", {literal_filter})", 1)
 
     return dax
+
+
+# -----------------------------
+# EXTRACT DAX FROM LLM RESPONSE
+# -----------------------------
+def extract_dax_from_response(llm_text: str):
+    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
 
 
 # -----------------------------
@@ -127,17 +180,7 @@ def extract_mcp_schema(result):
 
 
 # -----------------------------
-# EXTRACT DAX FROM LLM RESPONSE
-# -----------------------------
-def extract_dax_from_response(llm_text: str):
-    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return None
-
-
-# -----------------------------
-# CONTEXT HOLDER
+# CONTEXT CLASS
 # -----------------------------
 class FinOpsContext:
     def __init__(self, model, schema):
@@ -176,9 +219,9 @@ You are a FinOps analytics assistant.
 
 Rules:
 - Billing data is delayed. NEVER use TODAY().
-- Always anchor time using MAX(cost[date]).
-- Only generate SUMMARIZECOLUMNS-style DAX.
-- Do NOT use VAR, RETURN, FILTER, or time-intelligence functions.
+- Always anchor time using cost[date].
+- Generate ONLY SUMMARIZECOLUMNS-style DAX.
+- Do NOT use VAR, RETURN, FILTER, DATESINPERIOD, or time-intelligence.
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
