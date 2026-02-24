@@ -3,6 +3,7 @@ import json
 import certifi
 import requests
 import re
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.chat_models import init_chat_model
@@ -12,9 +13,9 @@ load_dotenv()
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
-# -----------------------------
-# AUTHENTICATION
-# -----------------------------
+# ============================================================
+# AUTH
+# ============================================================
 def get_azure_access_token():
     tenant = os.getenv("AZURE_TENANT_ID")
     client_id = os.getenv("AZURE_CLIENT_ID")
@@ -34,12 +35,11 @@ def get_azure_access_token():
     return response.json()["access_token"]
 
 
-# -----------------------------
-# EXECUTE DAX (Power BI REST)
-# -----------------------------
+# ============================================================
+# EXECUTE DAX
+# ============================================================
 def execute_dax_query(dax_query: str):
     dataset_id = os.getenv("POWERBI_DATASET_ID")
-
     token = get_azure_access_token()
 
     url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
@@ -56,16 +56,95 @@ def execute_dax_query(dax_query: str):
 
     response = requests.post(url, headers=headers, json=body, timeout=60)
     response.raise_for_status()
-
-    data = response.json()
-    # rows = data["results"][0]["tables"][0]["rows"]
-    # return rows
-    return data
+    return response.json()
 
 
-# -----------------------------
+# ============================================================
+# STRICT TIME PARSER
+# ============================================================
+def parse_time_range(question: str):
+    q = question.lower()
+
+    pattern = r"last\s+(\d+)?\s*(day|days|week|weeks|month|months|year|years)"
+    match = re.search(pattern, q)
+
+    if match:
+        value = int(match.group(1)) if match.group(1) else 1
+        unit = match.group(2)
+        return value, unit
+
+    if "yesterday" in q:
+        return 1, "days"
+
+    return None, None
+
+
+# ============================================================
+# BUILD SAFE DATE FILTER
+# ============================================================
+def build_date_filter(question: str):
+
+    value, unit = parse_time_range(question)
+
+    if value is None:
+        return None
+
+    today = datetime.today()
+
+    if "day" in unit:
+        start_date = today - timedelta(days=value)
+    elif "week" in unit:
+        start_date = today - timedelta(weeks=value)
+    elif "month" in unit:
+        start_date = today - timedelta(days=30 * value)
+    elif "year" in unit:
+        start_date = today - timedelta(days=365 * value)
+    else:
+        return None
+
+    return f"'cost'[date] >= DATE({start_date.year},{start_date.month},{start_date.day})"
+
+
+# ============================================================
+# HARD DAX SANITIZER (NO EXCEPTIONS)
+# ============================================================
+def sanitize_dax(dax: str, question: str):
+
+    # Remove unsupported constructs
+    dax = re.sub(r"\bVAR\b.*?\n", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"\bRETURN\b", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"FILTER\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+    dax = re.sub(r"DATESINPERIOD\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+    dax = re.sub(r"TODAY\(\)", "", dax, flags=re.IGNORECASE)
+    dax = re.sub(r"LASTDATE\s*\(.*?\)", "", dax, flags=re.DOTALL | re.IGNORECASE)
+
+    dax = dax.replace("SUMMARIZE(", "SUMMARIZECOLUMNS(")
+
+    if not dax.strip().upper().startswith("EVALUATE"):
+        dax = "EVALUATE\n" + dax
+
+    # Inject safe date filter
+    date_filter = build_date_filter(question)
+
+    if date_filter:
+        dax = dax.replace(")", f", {date_filter})", 1)
+
+    return dax.strip()
+
+
+# ============================================================
+# EXTRACT DAX FROM LLM
+# ============================================================
+def extract_dax_from_response(llm_text: str):
+    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+# ============================================================
 # EXTRACT MCP SCHEMA
-# -----------------------------
+# ============================================================
 def extract_mcp_schema(result):
     for msg in result["messages"]:
         if msg.type == "tool":
@@ -75,31 +154,21 @@ def extract_mcp_schema(result):
     return None
 
 
-# -----------------------------
-# EXTRACT DAX FROM LLM RESPONSE
-# -----------------------------
-def extract_dax_from_response(llm_text: str):
-    match = re.search(r"```DAX\s*(.*?)```", llm_text, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return None
-
-
-# -----------------------------
+# ============================================================
 # CONTEXT HOLDER
-# -----------------------------
+# ============================================================
 class FinOpsContext:
     def __init__(self, model, schema):
         self.model = model
         self.schema = schema
 
 
-# -----------------------------
-# INITIAL SETUP (RUNS ONCE)
-# -----------------------------
+# ============================================================
+# INITIAL SETUP
+# ============================================================
 async def finops_setup():
 
-    print("🔐 Getting Azure Token...")
+    print("🔐 Authenticating...")
     token = get_azure_access_token()
 
     servers = {
@@ -121,18 +190,13 @@ async def finops_setup():
     )
 
     system_prompt = """
-You are a FinOps assistant.
+You are a FinOps analytics engine.
 
-You must:
-- Use schema metadata to understand dataset
-- Generate valid DAX queries when calculations are requested
-- Never hallucinate tables/columns
-
-FINOPS TIME RULES:
-- Cloud biling data is delayed by ingestion pipelines
-- NEVER use TODAY() or system dates for cost analysis
-- ALWAYS determine the latest available date using MAX(cost[date])
-- If user asks for "yesterday's cost", interpret it as "latest available billing date"
+Rules:
+- Generate ONLY SUMMARIZECOLUMNS DAX.
+- Never use VAR, RETURN, FILTER, DATESINPERIOD, LASTDATE, TODAY.
+- Time filtering will be handled externally.
+- Only focus on aggregation and grouping.
 """
 
     agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
@@ -140,11 +204,8 @@ FINOPS TIME RULES:
     workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
     dataset_id = os.getenv("POWERBI_DATASET_ID")
 
-    print("📊 Loading schema from MCP (one-time)...")
-
     schema_query = f"""
 Inspect the semantic model.
-
 Workspace ID: {workspace_id}
 Dataset ID: {dataset_id}
 """
@@ -155,52 +216,40 @@ Dataset ID: {dataset_id}
 
     schema = extract_mcp_schema(result)
 
-    print("✅ Schema cached successfully")
-
+    print("✅ Schema loaded")
     return FinOpsContext(model, schema)
 
 
-# -----------------------------
+# ============================================================
 # CHAT FUNCTION
-# -----------------------------
+# ============================================================
 async def chat_instance_stream(user_question, context: FinOpsContext):
 
     schema_json = json.dumps(context.schema, indent=2)
 
     prompt = (
-        "You are a FinOps expert.\n\n"
-        "Answer the user question using this schema.\n"
-        "If calculation is requested, generate a DAX query.\n\n"
-        "Return format:\n\n"
-        "Answer:\n"
-        "<business explanation>\n\n"
-        "DAX Query (if applicable):\n"
-        "```DAX\n"
-        "<query>\n"
-        "```\n\n"
-        "Schema:\n"
-        + schema_json +
-        "\n\nUser Question:\n"
-        + user_question
+        "Generate SAFE executeQueries-compatible DAX.\n"
+        "Use SUMMARIZECOLUMNS only.\n\n"
+        "Schema:\n" + schema_json +
+        "\n\nUser Question:\n" + user_question
     )
 
     response = await context.model.ainvoke(prompt)
     llm_text = response.content
 
-    # Try executing DAX if present
     dax_query = extract_dax_from_response(llm_text)
 
     if dax_query:
         try:
-            rows = execute_dax_query(dax_query)
+            safe_dax = sanitize_dax(dax_query, user_question)
 
-            return (
-                llm_text
-                + "\n\n---\n### ✅ Live Result\n"
-                + json.dumps(rows, indent=2)
-            )
+            print("\nExecuting Safe DAX:\n", safe_dax)
+
+            result = execute_dax_query(safe_dax)
+
+            return llm_text + "\n\n---\n### ✅ Live Result\n" + json.dumps(result, indent=2)
 
         except Exception as e:
-            return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
+            return llm_text + f"\n\n⚠️ Execution failed: {str(e)}"
 
     return llm_text
