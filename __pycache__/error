@@ -1,60 +1,21 @@
-async def chat_instance_stream(user_question, context: FinOpsContext):
+if dax_query:
+    try:
+        result = execute_dax_query(dax_query)
 
-    schema_json = json.dumps(context.schema, indent=2)
+        rows = result["results"][0]["tables"][0]["rows"]
 
-    prompt = (
-        "You are a FinOps expert.\n\n"
-        "Answer the user question using this schema.\n"
-        "If calculation is requested, generate a DAX query.\n\n"
-        "Return format:\n\n"
-        "Answer:\n"
-        "<business explanation>\n\n"
-        "DAX Query (if applicable):\n"
-        "```DAX\n"
-        "<query>\n"
-        "```\n\n"
-        "Schema:\n"
-        + schema_json +
-        "\n\nUser Question:\n"
-        + user_question
-    )
+        if not rows:
+            formatted_output = "No data available for the selected period."
+        else:
+            formatted_output = ""
 
-    response = await context.model.ainvoke(prompt)
-    llm_text = response.content
+            for row in rows:
+                formatted_output += "\n"
+                for key, value in row.items():
+                    formatted_output += f"{key}: {round(value, 2) if isinstance(value, float) else value}  "
+                formatted_output += "\n"
 
-    # Extract DAX (but do NOT show it)
-    dax_query = extract_dax_from_response(llm_text)
+        return llm_text + "\n\n---\n### ✅ Live Result\n" + formatted_output
 
-    # Extract only business explanation
-    answer_text = llm_text.split("DAX Query")[0].strip()
-
-    if dax_query:
-        try:
-            result = execute_dax_query(dax_query)
-
-            # Extract rows safely
-            rows = result.get("results", [{}])[0] \
-                        .get("tables", [{}])[0] \
-                        .get("rows", [])
-
-            if not rows:
-                formatted_result = "No data available for the selected period."
-            else:
-                # Convert rows to readable text
-                formatted_lines = []
-                for row in rows:
-                    line = ", ".join([f"{k}: {v}" for k, v in row.items()])
-                    formatted_lines.append(line)
-
-                formatted_result = "\n".join(formatted_lines)
-
-            return (
-                answer_text
-                + "\n\n---\n### ✅ Live Result\n"
-                + formatted_result
-            )
-
-        except Exception as e:
-            return answer_text + f"\n\n⚠️ Unable to fetch live result: {str(e)}"
-
-    return answer_text
+    except Exception as e:
+        return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
