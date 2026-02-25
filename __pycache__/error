@@ -1,21 +1,156 @@
-if dax_query:
+import streamlit as st
+import asyncio
+import threading
+from backend import chat, setup
+
+Login_info = {"admin": "pass123"}
+
+
+@st.cache_resource
+def get_cached_agent():
+    return asyncio.run(setup())
+
+
+def _run_agent(prompt, agent, history, holder, event):
+    """Background thread so the UI stays interactive during generation."""
     try:
-        result = execute_dax_query(dax_query)
-
-        rows = result["results"][0]["tables"][0]["rows"]
-
-        if not rows:
-            formatted_output = "No data available for the selected period."
-        else:
-            formatted_output = ""
-
-            for row in rows:
-                formatted_output += "\n"
-                for key, value in row.items():
-                    formatted_output += f"{key}: {round(value, 2) if isinstance(value, float) else value}  "
-                formatted_output += "\n"
-
-        return llm_text + "\n\n---\n### ✅ Live Result\n" + formatted_output
-
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        holder["response"] = loop.run_until_complete(
+            chat(prompt, agent, history)
+        )
     except Exception as e:
-        return llm_text + f"\n\n⚠️ DAX execution failed: {str(e)}"
+        holder["response"] = f"Something went wrong: {str(e)[:200]}"
+    finally:
+        event.set()
+
+
+def check_login():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if not st.session_state.authenticated:
+        st.title("Login to Chatbot")
+        user = st.text_input("Username")
+        passwd = st.text_input("Password",type="password")
+
+        if st.button("Login"):
+            if user in Login_info and Login_info[user] == passwd:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Invalid Username or password")
+        return False
+    return True
+
+
+# ── Inject CSS to style the stop button like ChatGPT ──
+st.markdown("""
+<style>
+div[data-testid="stButton"].stop-btn button {
+    background-color: #353740;
+    color: white;
+    border: 1px solid #565869;
+    border-radius: 20px;
+    padding: 0.4rem 1.2rem;
+    font-size: 0.9rem;
+}
+div[data-testid="stButton"].stop-btn button:hover {
+    background-color: #444654;
+    border-color: #8e8ea0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("Cloud Operational Agent")
+st.divider()
+
+if check_login():
+    # with st.sidebar:
+    #     st.title("Configuration")
+    #     model_name = st.selectbox(
+    #         "Select Provider",
+    #         ["meta/Llama-4-Scout-17B-16E-Instruct", "openai/gpt-5", "deepseek/DeepSeek-V3-0324"],
+    #     )
+    #     temp = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
+
+    #     st.divider()
+    #     if st.button("Logout"):
+    #         st.session_state.authenticated = False
+    #         st.rerun()
+
+    chat_agent = get_cached_agent()
+
+    st.title(f"Chatting with {'LLM'}")
+
+    # ── Session state init ──
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "generating" not in st.session_state:
+        st.session_state.generating = False
+    if "stopped" not in st.session_state:
+        st.session_state.stopped = False
+
+    # ── Render chat history ──
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # ── Handle new user input ──
+    if prompt := st.chat_input("Type your response here", disabled=st.session_state.generating):
+        st.session_state.generating = True
+        st.session_state.stopped = False
+        st.session_state.pending_prompt = prompt
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.rerun()
+
+    # ── Generation in progress ──
+    if st.session_state.generating and not st.session_state.stopped:
+        prompt = st.session_state.get("pending_prompt", "")
+
+        # Show the user message that triggered this
+        # (already in messages, rendered above)
+
+        chat_history = [
+            (msg["role"], msg["content"])
+            for msg in st.session_state.messages[:-1]
+        ]
+
+        # Kick off agent in background thread
+        result_holder = {}
+        done_event = threading.Event()
+        worker = threading.Thread(
+            target=_run_agent,
+            args=(prompt, chat_agent, chat_history, result_holder, done_event),
+            daemon=True,
+        )
+        worker.start()
+
+        # Show thinking indicator + centered stop button
+        with st.chat_message("assistant"):
+            thinking_placeholder = st.empty()
+            thinking_placeholder.markdown("🤔 *Thinking...*")
+
+        # Centered stop button (ChatGPT-style)
+        _, center, _ = st.columns([2, 1, 2])
+        with center:
+            stop_clicked = st.button("⏹ Stop generating", key="stop_gen", use_container_width=True)
+
+        if stop_clicked:
+            st.session_state.stopped = True
+            st.session_state.generating = False
+            full_response = "⏹ *Generation stopped.* You can ask a new question."
+            thinking_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            st.rerun()
+
+        # Poll until done
+        done_event.wait()
+
+        # Generation complete
+        full_response = result_holder.get("response", "No response received.")
+        thinking_placeholder.markdown(full_response)
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.session_state.generating = False
+        st.session_state.pop("pending_prompt", None)
+        st.rerun()
+ 
