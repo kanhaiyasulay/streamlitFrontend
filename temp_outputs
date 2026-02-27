@@ -1,32 +1,331 @@
-You are a FinOps DAX query generator and analyst.
+import os
+import asyncio
+import requests
+from dotenv import load_dotenv
+from langchain_core.tools import tool
+from langchain.chat_models import init_chat_model
+from langchain.agents import create_agent
+from langchain_core.prompts import ChatPromptTemplate
 
-STRICT RULES:
+load_dotenv()
 
-1) If calculation is required:
-   - ALWAYS generate a full DAX query.
-   - The query MUST start with: EVALUATE
-   - It MUST return a table expression.
-   - NEVER return scalar expressions like SUM() alone.
-   - Wrap aggregations inside ROW() or SUMMARIZE().
+# =============================================================================
+# AUTH: Azure AD token using Service Principal
+# =============================================================================
+def get_azure_access_token() -> str:
+    """
+    Get Azure AD token for Power BI REST API using client_credentials.
+    Requires:
+      AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+    """
+    tenant = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
 
-Correct Example:
+    if not tenant or not client_id or not client_secret:
+        raise ValueError("Missing AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET")
 
-```DAX
-EVALUATE
-ROW(
-    "TotalCost",
-    CALCULATE(SUM(cost[nok]))
-)
+    token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://analysis.windows.net/powerbi/api/.default",
+        "grant_type": "client_credentials",
+    }
 
-If the question is informational:
-Answer in plain text.
-DO NOT generate DAX.
+    resp = requests.post(token_url, data=payload, timeout=60)
+    resp.raise_for_status()
+    return resp.json()["access_token"]
 
-TIME RULES:
-Never use TODAY()
-Always determine latest billing date using MAX(cost[date])
-Never hallucinate tables or columns
 
-Use only the provided schema
-"""
+# =============================================================================
+# POWER BI EXECUTEQUERIES helper
+# =============================================================================
+def _execute_queries_call(dax_query: str) -> dict:
+    """
+    Internal helper to call Power BI ExecuteQueries and return raw JSON.
 
+    Requires:
+      POWERBI_DATASET_ID
+    Optional:
+      POWERBI_GROUP_ID (workspace id)
+    """
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+    if not dataset_id:
+        raise ValueError("POWERBI_DATASET_ID is not set")
+
+    group_id = os.getenv("POWERBI_WORKSPACE_ID")  # optional (workspace)
+    token = get_azure_access_token()
+
+    # Use group endpoint if dataset is in a workspace
+    if group_id:
+        url = f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/datasets/{dataset_id}/executeQueries"
+    else:
+        url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "queries": [{"query": dax_query}],
+        "serializerSettings": {"includeNulls": True},
+    }
+
+    resp = requests.post(url, headers=headers, json=body, timeout=60)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _extract_rows(execute_queries_json: dict):
+    """
+    Extract rows array from ExecuteQueries response.
+    """
+    try:
+        return execute_queries_json["results"][0]["tables"][0].get("rows", [])
+    except Exception:
+        return []
+
+
+# =============================================================================
+# TOOL 1: Execute DAX query
+# =============================================================================
+@tool
+def fetch_model_schema_compact() -> dict:
+    """
+    Fetch a compact, LLM-safe version of the Power BI schema.
+    Returns only table names, column names + data types, and measure names.
+    Designed to stay well below token limits.
+    """
+
+    # Reuse existing logic
+    full = fetch_model_schema.invoke({"show_hidden": False})
+
+    if "error" in full:
+        return full
+
+    compact = {}
+
+    for table_name, table_obj in full["tables"].items():
+        compact[table_name] = {
+            "columns": [
+                {
+                    "name": c.get("Name") or c.get("[Name]"),
+                    "type": c.get("DataType") or c.get("[DataType]")
+                }
+                for c in table_obj.get("columns", [])
+            ],
+            "measures": [
+                m.get("Name") or m.get("[Name]")
+                for m in table_obj.get("measures", [])
+            ]
+        }
+
+    return {
+        "tables": compact,
+        "tables_count": len(compact),
+        "note": "Compact schema for LLM reasoning. Full metadata not included."
+    }
+
+
+
+@tool
+def execute_dax_query(dax_query: str) -> dict:
+    """
+    Execute a DAX query against the configured Power BI semantic model.
+    Pass the EXACT DAX query string, e.g.:
+      'EVALUATE TOPN(10, SUMMARIZECOLUMNS(...), [Measure], DESC)'
+    Returns raw ExecuteQueries JSON.
+    """
+    dataset_id = os.getenv("POWERBI_DATASET_ID")
+    group_id = os.getenv("POWERBI_WORKSPACE_ID")  # optional
+    token = get_azure_access_token()
+
+    if group_id:
+        url = f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/datasets/{dataset_id}/executeQueries"
+    else:
+        url = f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries"
+
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    body = {"queries": [{"query": dax_query}], "serializerSettings": {"includeNulls": True}}
+
+    resp = requests.post(url, headers=headers, json=body, timeout=60)
+
+    if not resp.ok:
+        try:
+            return {"ok": False, "status": resp.status_code, "error": resp.json()}
+        except Exception:
+            return {"ok": False, "status": resp.status_code, "error": resp.text}
+
+    return {"ok": True, "data": resp.json()}
+
+
+# =============================================================================
+# TOOL 2: Fetch model schema (tables/columns/measures/relationships)
+# =============================================================================
+@tool
+def fetch_model_schema(show_hidden: bool = False) -> dict:
+    """
+    Fetch semantic model schema using INFO.VIEW.* metadata DAX queries.
+
+    Returns a JSON structure the LLM can use:
+      {
+        "summary": {...},
+        "tables": {
+          "TableName": {
+            "tableMetadata": {...},
+            "columns": [...],
+            "measures": [...]
+          },
+          ...
+        },
+        "relationships": [...]
+      }
+
+    Notes:
+    - INFO.VIEW.COLUMNS() returns detailed metadata like Name/Table/DataType/FormatString, etc. [1](https://www.linkedin.com/learning/power-bi-modelado-de-datos-con-power-query?dApp=204528272&leis=MVL)
+    - ExecuteQueries returns one table per query, so schema retrieval runs multiple queries and merges results. [2](https://outlook.office365.com/owa/?ItemID=AAMkAGZkZWIyZTZhLWExM2UtNGY0Yi04YjU1LWViOTMyZWY3NDE1OQBGAAAAAACOSawrPRxZTJTk2QT29kYMBwC0vlDYutB%2fT4ac8OnE5qNyAAAAAAEJAAC0vlDYutB%2fT4ac8OnE5qNyAAAAAbQxAAA%3d&exvsurl=1&viewmodel=ReadMessageItem)
+    """
+    # Each call returns ONE table; must query each metadata table separately.
+    dax_tables = "EVALUATE INFO.VIEW.TABLES()"
+    dax_columns = "EVALUATE INFO.VIEW.COLUMNS()"
+    dax_measures = "EVALUATE INFO.VIEW.MEASURES()"
+    dax_rels = "EVALUATE INFO.VIEW.RELATIONSHIPS()"
+
+    try:
+        tables_rows = _extract_rows(_execute_queries_call(dax_tables))
+        columns_rows = _extract_rows(_execute_queries_call(dax_columns))
+        measures_rows = _extract_rows(_execute_queries_call(dax_measures))
+        rels_rows = _extract_rows(_execute_queries_call(dax_rels))
+
+        schema = {
+            "summary": {
+                "tables_count": 0,
+                "relationships_count": len(rels_rows),
+                "show_hidden": show_hidden,
+            },
+            "tables": {},          # tableName -> {tableMetadata, columns, measures}
+            "relationships": rels_rows,
+        }
+
+        # --- Index tables
+        for t in tables_rows:
+            tname = t.get("Name") or t.get("[Name]")
+            if not tname:
+                continue
+
+            is_hidden = t.get("IsHidden") if "IsHidden" in t else t.get("[IsHidden]")
+            if (not show_hidden) and (is_hidden is True):
+                continue
+
+            schema["tables"][tname] = {
+                "tableMetadata": t,
+                "columns": [],
+                "measures": [],
+            }
+
+        # --- Attach columns to tables
+        for c in columns_rows:
+            tname = c.get("Table") or c.get("[Table]")
+            if not tname:
+                continue
+
+            is_hidden = c.get("IsHidden") if "IsHidden" in c else c.get("[IsHidden]")
+            if (not show_hidden) and (is_hidden is True):
+                continue
+
+            if tname not in schema["tables"]:
+                schema["tables"][tname] = {
+                    "tableMetadata": {"Name": tname},
+                    "columns": [],
+                    "measures": [],
+                }
+
+            schema["tables"][tname]["columns"].append(c)
+
+        # --- Attach measures to tables
+        for m in measures_rows:
+            tname = m.get("Table") or m.get("[Table]") or "__MODEL__"
+
+            is_hidden = m.get("IsHidden") if "IsHidden" in m else m.get("[IsHidden]")
+            if (not show_hidden) and (is_hidden is True):
+                continue
+
+            if tname not in schema["tables"]:
+                schema["tables"][tname] = {
+                    "tableMetadata": {"Name": tname},
+                    "columns": [],
+                    "measures": [],
+                }
+
+            schema["tables"][tname]["measures"].append(m)
+
+        schema["summary"]["tables_count"] = len(schema["tables"])
+        return schema
+
+    except requests.HTTPError as e:
+        return {
+            "error": "Schema extraction failed via ExecuteQueries.",
+            "hint": (
+                "INFO.VIEW.* metadata queries may be blocked or require higher permissions "
+                "(often semantic model admin)."
+            ),
+            "details": str(e),
+        }
+    except Exception as e:
+        return {"error": "Unexpected error while extracting schema.", "details": str(e)}
+
+
+# =============================================================================
+# OPTIONAL: Agent wiring (kept minimal)
+# =============================================================================
+async def setup():
+    """
+    Creates an agent that can use both tools:
+      - fetch_model_schema
+      - execute_dax_query
+    """
+    model = init_chat_model(
+        os.getenv("MODEL"),
+        model_provider="openai",
+        api_key=os.getenv("GITHUB_TOKEN"),
+        base_url=os.getenv("ENDPOINT"),
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         "You are a Financial Agent working with Power BI data. "
+ "To understand schema, ALWAYS call fetch_model_schema_compact. "
+ "Use execute_dax_query only after identifying correct tables and columns. "
+ "Always to give cost in NOK currency."
+),
+        ("human", "{user_query}") 
+    ])
+
+    agent_graph = create_agent(model=model, tools=[fetch_model_schema_compact, execute_dax_query])
+    return prompt | agent_graph
+
+
+async def chat(user_input: str, chat_model):
+    try:
+        response = await chat_model.ainvoke({"user_query": user_input})
+        return response["messages"][-1].content
+    except Exception as e:
+        return f"some error occured, {e}"
+
+
+# =============================================================================
+# OPTIONAL: quick local test (no LLM) - run schema fetch directly
+# =============================================================================
+if __name__ == "__main__":
+    # quick sanity checks without LLM:
+    # 1) Fetch schema
+    print("Fetching schema...")
+    schema = fetch_model_schema.invoke({"show_hidden": False})
+    print("Schema keys:", schema.keys())
+
+    # 2) Run a simple DAX query (example)
+    # print("Running DAX...")
+    # data = execute_dax_query.invoke({"dax_query": "EVALUATE ROW(\"Ping\", 1)"})
+    # print(data)
