@@ -1,137 +1,106 @@
-import os
-import json
-import certifi
-import requests
-from dotenv import load_dotenv
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent
+# FinOps Agent – Technical Overview
 
-load_dotenv()
-os.environ["SSL_CERT_FILE"] = certifi.where()
+## 1. Purpose
 
+The FinOps Agent is a domain-specific AI agent designed to answer cloud cost-related queries using Power BI semantic models.  
 
-# -----------------------------
-# AUTHENTICATION
-# -----------------------------
-def get_azure_access_token():
-    tenant = os.getenv("AZURE_TENANT_ID")
-    client_id = os.getenv("AZURE_CLIENT_ID")
-    client_secret = os.getenv("AZURE_CLIENT_SECRET")
+It allows users to ask natural language questions such as:
 
-    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+- Cloud cost by year
+- Cost by month
+- Last 3 months cost
+- Cost by subscription
+- Comparison queries
 
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": "https://analysis.windows.net/powerbi/api/.default",
-        "grant_type": "client_credentials",
-    }
+The agent is scoped to **mydnvsoftware** data and always returns cost in NOK currency.
 
-    response = requests.post(url, data=payload)
-    response.raise_for_status()
-    return response.json()["access_token"]
+---
 
+## 2. Technology Stack
 
-# -----------------------------
-# EXTRACT MCP SCHEMA
-# -----------------------------
-def extract_mcp_schema(result):
-    for msg in result["messages"]:
-        if msg.type == "tool":
-            artifact = msg.artifact
-            if artifact and "structured_content" in artifact:
-                return artifact["structured_content"]
-    return None
+| Component        | Technology Used |
+|-----------------|----------------|
+| LLM Framework   | LangChain |
+| LLM Provider    | OpenAI-compatible endpoint |
+| Data Source     | Power BI Semantic Model |
+| Auth Mechanism  | Azure AD Service Principal |
+| API Integration | Power BI REST API (ExecuteQueries) |
 
+---
 
-# -----------------------------
-# GLOBAL CACHE (keeps schema loaded once)
-# -----------------------------
-class FinOpsContext:
-    def __init__(self, model, agent_graph, schema):
-        self.model = model
-        self.agent_graph = agent_graph
-        self.schema = schema
+## 3. Power BI Configuration
 
+- **Workspace Name:** Semantic model  
+- **Dataset Name:** SWE-Cloud-Data  
+- **Connection Type:** REST API (ExecuteQueries endpoint)  
+- **Authentication:** Azure AD OAuth2 (Client Credentials Flow)
 
-# -----------------------------
-# INITIAL SETUP (RUNS ONCE)
-# -----------------------------
-async def finops_setup():
+Required Environment Variables:
+- ENDPOINT
+- AZURE_TENANT_ID
+- AZURE_CLIENT_ID
+- AZURE_CLIENT_SECRET
+- POWERBI_WORKSPACE_ID
+- POWERBI_DATASET_ID
 
-    print("🔐 Getting Azure Token...")
-    token = get_azure_access_token()
+-----
+## 4. High-Level Architecture
 
-    servers = {
-        "powerbi-remote": {
-            "transport": "http",
-            "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi",
-            "headers": {"Authorization": f"Bearer {token}"}
-        }
-    }
+User → Streamlit UI → LangChain Agent → Tools → Power BI REST API → Response Formatter → User
 
-    client = MultiServerMCPClient(servers)
-    tools = await client.get_tools()
+### Flow Explanation
 
-    model = init_chat_model(
-        os.getenv("MODEL"),
-        model_provider="openai",
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url=os.getenv("ENDPOINT"),
-    )
+1. User enters natural language query.
+2. Agent first calls `fetch_model_schema_compact()` to understand available tables, columns, and measures.
+3. Agent generates a valid DAX query.
+4. `execute_dax_query()` executes the query using Power BI ExecuteQueries API.
+5. JSON result is returned.
+6. Agent formats output into a clean, user-friendly response.
+7. DAX query is NOT exposed to the user.
 
-    system_prompt = """
-You are a FinOps assistant.
+## 5. Agent Tools
 
-Use the schema to answer questions and generate DAX queries when needed.
-Do NOT hallucinate tables or columns.
-"""
+### 5.1 fetch_model_schema_compact()
 
-    agent_graph = create_agent(model, tools, system_prompt=system_prompt, debug=False)
+Purpose:
+- Returns compact schema
+- Includes table names, columns (with types), and measures
+- Prevents token overflow
+- Used before generating DAX
 
-    workspace_id = os.getenv("POWERBI_WORKSPACE_ID")
-    dataset_id = os.getenv("POWERBI_DATASET_ID")
+Internally uses:
+- INFO.VIEW.TABLES()
+- INFO.VIEW.COLUMNS()
+- INFO.VIEW.MEASURES()
+- INFO.VIEW.RELATIONSHIPS()
 
-    print("📊 Loading schema from MCP (one-time)...")
+---
 
-    schema_query = f"""
-Inspect the semantic model.
+### 5.2 execute_dax_query(dax_query: str)
 
-Workspace ID: {workspace_id}
-Dataset ID: {dataset_id}
-"""
-
-    result = await agent_graph.ainvoke(
-        {"messages": [{"role": "user", "content": schema_query}]}
-    )
-
-    schema = extract_mcp_schema(result)
-
-    print("✅ Schema cached successfully")
-
-    return FinOpsContext(model, agent_graph, schema)
+Purpose:
+- Executes validated DAX query
+- Calls:
 
 
-# -----------------------------
-# CHAT FUNCTION (CALLED PER MESSAGE)
-# -----------------------------
-async def chat_instance_stream(user_question, context: FinOpsContext):
+POST https://api.powerbi.com/v1.0/myorg/groups/{workspaceId}/datasets/{datasetId}/executeQueries
 
-    schema = context.schema
-    model = context.model
 
-    prompt = f"""
-You are a FinOps expert.
+Returns:
+- Raw ExecuteQueries JSON
+- Status metadata
 
-Answer the user question using this schema.
-If calculation is requested, generate a DAX query.
+------
 
-Return format:
+## 6. Query Execution Flow (Detailed)
 
-Answer:
-<business explanation>
+1. User Query
+2. LLM interprets intent
+3. Schema fetched (compact)
+4. LLM builds DAX query
+5. DAX executed via REST API
+6. JSON rows extracted
+7. Response formatted into readable output
+8. Only final business answer shown
 
-DAX Query (if applicable):
-```DAX
-<query>
+-----
