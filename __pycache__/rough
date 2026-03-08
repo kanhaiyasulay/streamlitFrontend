@@ -1,6 +1,4 @@
-(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> python voice-live-quickstart.py
-🎙️  Basic Voice Assistant with Azure VoiceLive SDK
-==================================================
-❌ Error: No authentication provided
-Please provide an API key using --api-key or set AZURE_VOICELIVE_API_KEY environment variable,
-or use --use-token-credential for Azure authentication.
+AZURE_VOICELIVE_API_KEY=YOUR_API_KEY
+AZURE_VOICELIVE_ENDPOINT=https://YOUR_RESOURCE.services.ai.azure.com/
+AZURE_VOICELIVE_MODEL=gpt-realtime
+AZURE_VOICELIVE_VOICE=en-US-Ava:DragonHDLatestNeural
