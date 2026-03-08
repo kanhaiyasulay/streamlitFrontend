@@ -1,23 +1,79 @@
-(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> pipwin install pyaudio
-b"\x80\x00V\x00P\x00p\x01\\\x03\\\x05V\x004\x014\x01p\x02/\x00p\x03.\x00p\x04V\x02\x10\x00F?p\x05WS\\\x07V\x044\x01&\x00V\x04P\t\\\x0bV\x05P\x0cV\x05P\x0e4\x024\x01\x1f\x00KA\t\x00\x1e\x00\\\x10P\x12'\x00d\x13\x1c\x00R\x00P\x15V\x044\x01p\x06M\x0b\\\x17V\x044\x01p\x06Wa8wd\xe4\x1c\x00\\\x19V\x064\x01\x1f\x00\\\x19V\x014\x01\x1f\x00\\\x1b\\\x1d\\\x07V\x064\x01\\\x07V\x014\x014\x024\x01\x10\x00F\xa0p\x07W\x17,\x1aWg,\x1a8wd\x82\x1c\x00\x1b\x00Ws9\x00g\x03\x1c\x00K\t\\\x19W7,\x1a4\x01\x1f\x00\\\x19W7^\x02,\n,\x1a4\x01\x1f\x00\\\x19\\\x03\\\x1f\\ V\x014\x024\x01V\x07^\x04,\nV\x07^\x08,\x00\x01\x004\x01\x1f\x00\\\x19WG^\x04,\nV\x07^\x08,\x00\x01\x004\x01\x1f\x00\x1b\x00\\#R\x014\x01h\x01\t\x00\x1e\x00R\x02#\x00R\x02#\x00"
-b"\x80\x00V\x00P\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00p\x01\\\x03\x00\x00\x00\x00\x00\x00\x00\x00\\\x05\x00\x00\x00\x00\x00\x00\x00\x00V\x004\x01\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00p\x02/\x00p\x03.\x00p\x04V\x02\x10\x00F?\x00\x00p\x05WS\\\x07\x00\x00\x00\x00\x00\x00\x00\x00V\x044\x01\x00\x00\x00\x00\x00\x00&\x00\x00\x00V\x04P\t\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\\\x0b\x00\x00\x00\x00\x00\x00\x00\x00V\x05P\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00V\x05P\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x004\x02\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00\x1f\x00KA\x00\x00\t\x00\x1e\x00\\\x10\x00\x00\x00\x00\x00\x00\x00\x00P\x12\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'\x00\x00\x00\x00\x00\x00\x00d\x13\x00\x00\x1c\x00R\x00P\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00V\x044\x01\x00\x00\x00\x00\x00\x00p\x06M\x0b\\\x17\x00\x00\x00\x00\x00\x00\x00\x00V\x044\x01\x00\x00\x00\x00\x00\x00p\x06Wa8w\x00\x00d\xe4\x00\x00\x1c\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00V\x064\x01\x00\x00\x00\x00\x00\x00\x1f\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00V\x014\x01\x00\x00\x00\x00\x00\x00\x1f\x00\\\x1b\x00\x00\x00\x00\x00\x00\x00\x00\\\x1d\x00\x00\x00\x00\x00\x00\x00\x00\\\x07\x00\x00\x00\x00\x00\x00\x00\x00V\x064\x01\x00\x00\x00\x00\x00\x00\\\x07\x00\x00\x00\x00\x00\x00\x00\x00V\x014\x01\x00\x00\x00\x00\x00\x004\x02\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00\x10\x00F\xa0\x00\x00p\x07W\x17,\x1a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Wg,\x1a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x008w\x00\x00d\x82\x00\x00\x1c\x00\x1b\x00Ws9\x00\x00\x00g\x03\x00\x00\x1c\x00K\t\x00\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00W7,\x1a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00\x1f\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00W7^\x02,\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00,\x1a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00\x1f\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00\\\x03\x00\x00\x00\x00\x00\x00\x00\x00\\\x1f\x00\x00\x00\x00\x00\x00\x00\x00\\ \x00\x00\x00\x00\x00\x00\x00\x00V\x014\x02\x00\x00\x00\x00\x00\x004\x01\x00\x00\x00\x00\x00\x00V\x07^\x04,\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00V\x07^\x08,\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x004\x01\x00\x00\x00\x00\x00\x00\x1f\x00\\\x19\x00\x00\x00\x00\x00\x00\x00\x00WG^\x04,\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00V\x07^\x08,\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x004\x01\x00\x00\x00\x00\x00\x00\x1f\x00\x1b\x00\\#\x00\x00\x00\x00\x00\x00\x00\x00R\x014\x01\x00\x00\x00\x00\x00\x00h\x01\t\x00\x1e\x00R\x02#\x00R\x02#\x00"
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "C:\Users\KANSUL\Desktop\voice-agent\.venv\Scripts\pipwin.exe\__main__.py", line 2, in <module>
-    from pipwin.command import main
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\pipwin\command.py", line 28, in <module>
-    from . import pipwin, __version__
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\pipwin\pipwin.py", line 13, in <module>
-    import js2py
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\js2py\__init__.py", line 72, in <module>
-    from .base import PyJsException
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\js2py\base.py", line 6, in <module>
-    from .utils.injector import fix_js_args
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\js2py\utils\injector.py", line 264, in <module>   
-    check(six.get_function_code(check))
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\KANSUL\Desktop\voice-agent\.venv\Lib\site-packages\js2py\utils\injector.py", line 251, in check      
-    raise RuntimeError(
-        'Your python version made changes to the bytecode')
-RuntimeError: Your python version made changes to the bytecode
+(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> python --version
+Python 3.14.2
+(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> pip install pip setuptools wheel
+Requirement already satisfied: pip in .\.venv\Lib\site-packages (26.0.1)
+Collecting setuptools
+  Using cached setuptools-82.0.0-py3-none-any.whl.metadata (6.6 kB)
+Collecting wheel
+  Using cached wheel-0.46.3-py3-none-any.whl.metadata (2.4 kB)
+Requirement already satisfied: packaging>=24.0 in .\.venv\Lib\site-packages (from wheel) (26.0)
+Using cached setuptools-82.0.0-py3-none-any.whl (1.0 MB)
+Using cached wheel-0.46.3-py3-none-any.whl (30 kB)
+Installing collected packages: wheel, setuptools
+Successfully installed setuptools-82.0.0 wheel-0.46.3
+(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> pip install pyaudio
+Collecting pyaudio
+  Using cached PyAudio-0.2.14.tar.gz (47 kB)
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+Building wheels for collected packages: pyaudio
+  Building wheel for pyaudio (pyproject.toml) ... error
+  error: subprocess-exited-with-error
+
+  × Building wheel for pyaudio (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [22 lines of output]
+      WARNING:root:Warning: VCPKG_PATH envrionment variable not set.
+      C:\Users\KANSUL\AppData\Local\Temp\pip-build-env-fkyxaz__\overlay\Lib\site-packages\setuptools\dist.py:765: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+      !!
+
+              ********************************************************************************
+              Please consider removing the following classifiers in favor of a SPDX license expression:
+
+              License :: OSI Approved :: MIT License
+
+              See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+              ********************************************************************************
+
+      !!
+        self._finalize_license_expression()
+      INFO:root:running bdist_wheel
+      INFO:root:running build
+      INFO:root:running build_py
+      INFO:root:creating build\lib.win-amd64-cpython-314\pyaudio
+      INFO:root:copying src\pyaudio\__init__.py -> build\lib.win-amd64-cpython-314\pyaudio
+      INFO:root:running build_ext
+      INFO:root:building 'pyaudio._portaudio' extension
+      error: Microsoft Visual C++ 14.0 or greater is required. Get it with "Microsoft C++ Build Tools": https://visualstudio.microsoft.com/visual-cpp-build-tools/
+      [end of output]
+
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  ERROR: Failed building wheel for pyaudio
+Failed to build pyaudio
+error: failed-wheel-build-for-install
+
+× Failed to build installable wheels for some pyproject.toml based projects
+╰─> pyaudio
+(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> pip install pipwin
+Requirement already satisfied: pipwin in .\.venv\Lib\site-packages (0.5.2)
+Requirement already satisfied: docopt in .\.venv\Lib\site-packages (from pipwin) (0.6.2)
+Requirement already satisfied: requests in .\.venv\Lib\site-packages (from pipwin) (2.32.5)
+Requirement already satisfied: pyprind in .\.venv\Lib\site-packages (from pipwin) (2.11.3)
+Requirement already satisfied: six in .\.venv\Lib\site-packages (from pipwin) (1.17.0)
+Requirement already satisfied: beautifulsoup4>=4.9.0 in .\.venv\Lib\site-packages (from pipwin) (4.14.3)
+Requirement already satisfied: js2py in .\.venv\Lib\site-packages (from pipwin) (0.74)
+Requirement already satisfied: packaging in .\.venv\Lib\site-packages (from pipwin) (26.0)
+Requirement already satisfied: pySmartDL>=1.3.1 in .\.venv\Lib\site-packages (from pipwin) (1.3.4)
+Requirement already satisfied: soupsieve>=1.6.1 in .\.venv\Lib\site-packages (from beautifulsoup4>=4.9.0->pipwin) (2.8.3)
+Requirement already satisfied: typing-extensions>=4.0.0 in .\.venv\Lib\site-packages (from beautifulsoup4>=4.9.0->pipwin) (4.15.0)
+Requirement already satisfied: tzlocal>=1.2 in .\.venv\Lib\site-packages (from js2py->pipwin) (5.3.1)
+Requirement already satisfied: pyjsparser>=2.5.1 in .\.venv\Lib\site-packages (from js2py->pipwin) (2.7.1)
+Requirement already satisfied: tzdata in .\.venv\Lib\site-packages (from tzlocal>=1.2->js2py->pipwin) (2025.3)        
+Requirement already satisfied: charset_normalizer<4,>=2 in .\.venv\Lib\site-packages (from requests->pipwin) (3.4.5)  
+Requirement already satisfied: idna<4,>=2.5 in .\.venv\Lib\site-packages (from requests->pipwin) (3.11)
+Requirement already satisfied: urllib3<3,>=1.21.1 in .\.venv\Lib\site-packages (from requests->pipwin) (2.6.3)        
+Requirement already satisfied: certifi>=2017.4.17 in .\.venv\Lib\site-packages (from requests->pipwin) (2026.2.25)    
+(.venv) PS C:\Users\KANSUL\Desktop\voice-agent> pip install PyAudio-0.2.13-cp312-cp312-win_amd64.whl
+WARNING: Requirement 'PyAudio-0.2.13-cp312-cp312-win_amd64.whl' looks like a filename, but the file does not exist
+ERROR: PyAudio-0.2.13-cp312-cp312-win_amd64.whl is not a supported wheel on this platform.
