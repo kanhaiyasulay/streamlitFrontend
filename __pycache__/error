@@ -1,33 +1,113 @@
-streamlit.errors.StreamlitDuplicateElementId: There are multiple `slider` elements with the same auto-generated ID. When this element is created, it is assigned an internal ID based on the element type and provided parameters. Multiple elements with the same type and parameters will cause this error.
+import streamlit as st
+import asyncio
+import os
+from dotenv import load_dotenv
+from azure.core.credentials import AzureKeyCredential
 
-To fix this error, please pass a unique `key` argument to the `slider` element.
+from voice_live_quickstart import BasicVoiceAssistant
 
-File "C:\Users\KANSUL\mcp-help\latest_testing\frontend.py", line 311, in <module>
-    temperature = st.slider(
-        "Temperature",
-    ...<4 lines>...
-        help="Lower = more deterministic, Higher = more creative"
+load_dotenv()
+
+st.set_page_config(
+    page_title="AI Sales Training Simulator",
+    page_icon="🎤",
+    layout="wide"
+)
+
+st.title("🎤 AI Sales Training Simulator")
+st.write("Practice your sales pitch with an AI customer.")
+
+# Sidebar settings
+st.sidebar.header("Settings")
+
+voice = st.sidebar.selectbox(
+    "AI Voice",
+    [
+        "en-US-Ava:DragonHDLatestNeural",
+        "en-US-Guy:DragonHDLatestNeural"
+    ]
+)
+
+scenario = st.sidebar.selectbox(
+    "Customer Personality",
+    [
+        "Curious Customer",
+        "Price Sensitive Customer",
+        "Skeptical Customer"
+    ]
+)
+
+# Initialize session state
+if "conversation" not in st.session_state:
+    st.session_state.conversation = []
+
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+col1, col2 = st.columns(2)
+
+with col1:
+    start_btn = st.button("▶ Start Conversation")
+
+with col2:
+    stop_btn = st.button("⏹ Stop & Evaluate")
+
+endpoint = os.environ.get("AZURE_VOICELIVE_ENDPOINT")
+api_key = os.environ.get("AZURE_VOICELIVE_API_KEY")
+model = os.environ.get("AZURE_VOICELIVE_MODEL", "gpt-realtime")
+
+credential = AzureKeyCredential(api_key)
+
+async def run_agent():
+    assistant = BasicVoiceAssistant(
+        endpoint,
+        credential,
+        model,
+        voice,
+        instructions=""
     )
-File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\runtime\metrics_util.py", line 532, in wrapped_func
-    result = non_optional_func(*args, **kwargs)
-File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\elements\widgets\slider.py", line 654, in slider
-    return self._slider(
-           ~~~~~~~~~~~~^
-        label=label,
-        ^^^^^^^^^^^^
-    ...<13 lines>...
-        ctx=ctx,
-        ^^^^^^^^
+
+    await assistant.start()
+
+if start_btn:
+
+    st.session_state.running = True
+
+    st.success("Voice session started. Speak into your microphone.")
+
+    asyncio.run(run_agent())
+
+if stop_btn:
+
+    st.warning("Generating evaluation...")
+
+# Conversation display
+
+st.header("💬 Conversation")
+
+chat_container = st.container()
+
+with chat_container:
+
+    if st.session_state.conversation:
+
+        for msg in st.session_state.conversation:
+
+            if msg["role"] == "user":
+                st.chat_message("user").write(msg["text"])
+            else:
+                st.chat_message("assistant").write(msg["text"])
+
+    else:
+        st.info("Conversation will appear here once the session starts.")
+
+# Evaluation area
+
+st.header("📊 Performance Evaluation")
+
+evaluation_placeholder = st.empty()
+
+if not st.session_state.running:
+    evaluation_placeholder.info(
+        "Evaluation will appear after the conversation ends."
     )
-    ^
-File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\elements\widgets\slider.py", line 701, in _slider
-    element_id = compute_and_register_element_id(
-        "slider",
-    ...<13 lines>...
-        width=width,
-    )
-File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\elements\lib\utils.py", line 265, in compute_and_register_element_id
-    _register_element_id(ctx, element_type, element_id)
-    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-File "C:\Users\KANSUL\mcp-help\.venv\Lib\site-packages\streamlit\elements\lib\utils.py", line 150, in _register_element_id
-    raise StreamlitDuplicateElementId(element_type)
