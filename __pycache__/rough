@@ -1,19 +1,4 @@
-You are working on a full stack project with the following folder structure:
-
-UI/
- ├── backend/
- │    ├── voice_live_quickstart.py
- │    ├── .env
- │    ├── requirements.txt
- │
- └── VMA-frontend/
-      ├── src/
-      │   ├── pages/
-      │   ├── components/
-      │   ├── App.jsx
-      │   └── other React files
-      └── package.json
-
+You are working on a full stack project:
 
 PROJECT CONTEXT
 
