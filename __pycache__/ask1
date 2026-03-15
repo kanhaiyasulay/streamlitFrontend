@@ -1,0 +1,407 @@
+# -------------------------------------------------------------------------
+# Voice Mode Agent - Sales Training Simulator
+# -------------------------------------------------------------------------
+
+from __future__ import annotations
+import os
+import sys
+import argparse
+import asyncio
+import base64
+from datetime import datetime
+import json
+import logging
+import queue
+import signal
+from typing import Union, Optional, TYPE_CHECKING, cast
+
+from azure.core.credentials import AzureKeyCredential
+from azure.core.credentials_async import AsyncTokenCredential
+from azure.identity.aio import AzureCliCredential
+
+from azure.ai.voicelive.aio import connect
+from azure.ai.voicelive.models import (
+    AudioEchoCancellation,
+    AudioNoiseReduction,
+    AzureStandardVoice,
+    InputAudioFormat,
+    Modality,
+    OutputAudioFormat,
+    RequestSession,
+    ServerEventType,
+    ServerVad
+)
+
+from dotenv import load_dotenv
+import pyaudio
+
+if TYPE_CHECKING:
+    from azure.ai.voicelive.aio import VoiceLiveConnection
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+load_dotenv('./.env', override=True)
+
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+logging.basicConfig(
+    filename=f'logs/{timestamp}_voicelive.log',
+    filemode="w",
+    format='%(asctime)s:%(name)s:%(levelname)s:%(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
+# -------------------------------------------------------------------------
+# AUDIO PROCESSOR
+# -------------------------------------------------------------------------
+
+class AudioProcessor:
+
+    loop: asyncio.AbstractEventLoop
+
+    class AudioPlaybackPacket:
+        def __init__(self, seq_num: int, data: Optional[bytes]):
+            self.seq_num = seq_num
+            self.data = data
+
+    def __init__(self, connection):
+
+        self.connection = connection
+        self.audio = pyaudio.PyAudio()
+
+        self.format = pyaudio.paInt16
+        self.channels = 1
+        self.rate = 24000
+        self.chunk_size = 1200
+
+        self.input_stream = None
+
+        self.playback_queue: queue.Queue[AudioProcessor.AudioPlaybackPacket] = queue.Queue()
+        self.playback_base = 0
+        self.next_seq_num = 0
+        self.output_stream: Optional[pyaudio.Stream] = None
+
+    def start_capture(self):
+
+        def _capture_callback(in_data, _frame_count, _time_info, _status_flags):
+
+            audio_base64 = base64.b64encode(in_data).decode("utf-8")
+
+            asyncio.run_coroutine_threadsafe(
+                self.connection.input_audio_buffer.append(audio=audio_base64),
+                self.loop
+            )
+
+            return (None, pyaudio.paContinue)
+
+        if self.input_stream:
+            return
+
+        self.loop = asyncio.get_event_loop()
+
+        self.input_stream = self.audio.open(
+            format=self.format,
+            channels=self.channels,
+            rate=self.rate,
+            input=True,
+            frames_per_buffer=self.chunk_size,
+            stream_callback=_capture_callback,
+        )
+
+    def start_playback(self):
+
+        if self.output_stream:
+            return
+
+        remaining = bytes()
+
+        def _playback_callback(_in_data, frame_count, _time_info, _status_flags):
+
+            nonlocal remaining
+            frame_count *= pyaudio.get_sample_size(pyaudio.paInt16)
+
+            out = remaining[:frame_count]
+            remaining = remaining[frame_count:]
+
+            while len(out) < frame_count:
+
+                try:
+                    packet = self.playback_queue.get_nowait()
+                except queue.Empty:
+                    out += bytes(frame_count - len(out))
+                    continue
+
+                if not packet or not packet.data:
+                    break
+
+                if packet.seq_num < self.playback_base:
+                    remaining = bytes()
+                    continue
+
+                num_to_take = frame_count - len(out)
+                out += packet.data[:num_to_take]
+                remaining = packet.data[num_to_take:]
+
+            return (out, pyaudio.paContinue)
+
+        self.output_stream = self.audio.open(
+            format=self.format,
+            channels=self.channels,
+            rate=self.rate,
+            output=True,
+            frames_per_buffer=self.chunk_size,
+            stream_callback=_playback_callback
+        )
+
+    def _get_and_increase_seq_num(self):
+        seq = self.next_seq_num
+        self.next_seq_num += 1
+        return seq
+
+    def queue_audio(self, audio_data: Optional[bytes]):
+
+        self.playback_queue.put(
+            AudioProcessor.AudioPlaybackPacket(
+                seq_num=self._get_and_increase_seq_num(),
+                data=audio_data
+            )
+        )
+
+    def skip_pending_audio(self):
+        self.playback_base = self._get_and_increase_seq_num()
+
+    def shutdown(self):
+
+        if self.input_stream:
+            self.input_stream.stop_stream()
+            self.input_stream.close()
+
+        if self.output_stream:
+            self.skip_pending_audio()
+            self.queue_audio(None)
+            self.output_stream.stop_stream()
+            self.output_stream.close()
+
+        if self.audio:
+            self.audio.terminate()
+
+# -------------------------------------------------------------------------
+# VOICE ASSISTANT
+# -------------------------------------------------------------------------
+
+class BasicVoiceAssistant:
+
+    def __init__(self, endpoint, credential, model, voice, instructions):
+
+        self.endpoint = endpoint
+        self.credential = credential
+        self.model = model
+        self.voice = voice
+        self.instructions = instructions
+
+        self.connection: Optional["VoiceLiveConnection"] = None
+        self.audio_processor: Optional[AudioProcessor] = None
+
+        self.conversation_history = []
+        self._conversation_file = os.path.join('logs', 'last_conversation.json')
+
+    def _save_conversation(self):
+        with open(self._conversation_file, 'w', encoding='utf-8') as f:
+            json.dump(self.conversation_history, f, ensure_ascii=False, indent=2)
+
+    async def start(self):
+
+        async with connect(
+            endpoint=self.endpoint,
+            credential=self.credential,
+            model=self.model,
+        ) as connection:
+
+            self.connection = connection
+
+            ap = AudioProcessor(connection)
+            self.audio_processor = ap
+
+            await self._setup_session()
+
+            ap.start_playback()
+
+            print("\n🎤 SALES TRAINING SIMULATOR READY")
+            print("Speak like a salesperson.")
+            print("Say 'exit' to finish and get evaluation.\n")
+
+            await self._process_events()
+
+    async def _setup_session(self):
+
+        voice_config = AzureStandardVoice(name=self.voice)
+
+        turn_detection_config = ServerVad(
+            threshold=0.5,
+            prefix_padding_ms=300,
+            silence_duration_ms=2000
+        )
+
+        session_config = RequestSession(
+
+            modalities=[Modality.TEXT, Modality.AUDIO],
+
+            instructions="""
+You are pretending to be a potential customer evaluating a product.
+
+Your personality:
+- Curious
+- Slightly skeptical
+- Ask realistic questions
+- Raise objections about price, ROI, competitors
+
+Speak naturally like a human customer.
+""",
+
+            voice=voice_config,
+
+            input_audio_format=InputAudioFormat.PCM16,
+            output_audio_format=OutputAudioFormat.PCM16,
+
+            turn_detection=turn_detection_config,
+
+            input_audio_echo_cancellation=AudioEchoCancellation(),
+            input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
+        )
+
+        await self.connection.session.update(session=session_config)
+
+    async def _process_events(self):
+
+        async for event in self.connection:
+            await self._handle_event(event)
+
+    async def _handle_event(self, event):
+
+        ap = self.audio_processor
+
+        if event.type == ServerEventType.SESSION_UPDATED:
+            ap.start_capture()
+
+        elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+            print("🎤 Listening...")
+            # ap.skip_pending_audio()
+
+        elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
+            print("🤔 Processing...")
+
+        elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
+            ap.queue_audio(event.delta)
+
+        elif event.type == ServerEventType.CONVERSATION_ITEM_CREATED:
+
+            text = ""
+            role = event.item.role
+
+            if hasattr(event.item, "content") and event.item.content:
+                for part in event.item.content:
+                    if hasattr(part, "text"):
+                        text += part.text
+
+            if text:
+
+                print(f"{role.upper()}: {text}")
+
+                self.conversation_history.append({
+                    "role": role,
+                    "text": text
+                })
+                self._save_conversation()
+
+                if role == "user" and "exit" in text.lower():
+
+                    print("\nGenerating evaluation...\n")
+
+                    await self.generate_evaluation()
+
+                    os._exit(0)
+
+    async def generate_evaluation(self):
+
+        transcript = "\n".join(
+            [f"{c['role']}: {c['text']}" for c in self.conversation_history]
+        )
+
+        evaluation_prompt = f"""
+You are an expert sales trainer.
+
+Evaluate the salesperson based on this conversation.
+
+Conversation:
+{transcript}
+
+Provide:
+
+Strengths
+Weaknesses
+Overall rating out of 10
+"""
+
+        await self.connection.response.create(
+            response={
+                "modalities": ["text"],
+                "instructions": evaluation_prompt
+            }
+        )
+
+# -------------------------------------------------------------------------
+# MAIN
+# -------------------------------------------------------------------------
+
+def main():
+
+    endpoint = os.environ.get("AZURE_VOICELIVE_ENDPOINT")
+    api_key = os.environ.get("AZURE_VOICELIVE_API_KEY")
+    model = os.environ.get("AZURE_VOICELIVE_MODEL", "gpt-realtime")
+    voice = os.environ.get("AZURE_VOICELIVE_VOICE", "en-US-Ava:DragonHDLatestNeural")
+
+    credential = AzureKeyCredential(api_key)
+
+    assistant = BasicVoiceAssistant(
+        endpoint,
+        credential,
+        model,
+        voice,
+        instructions=""
+    )
+
+    asyncio.run(assistant.start())
+
+if __name__ == "__main__":
+
+    p = pyaudio.PyAudio()
+
+    input_devices = [
+        i for i in range(p.get_device_count())
+        if cast(int, p.get_device_info_by_index(i).get("maxInputChannels", 0)) > 0
+    ]
+
+    output_devices = [
+        i for i in range(p.get_device_count())
+        if cast(int, p.get_device_info_by_index(i).get("maxOutputChannels", 0)) > 0
+    ]
+
+    p.terminate()
+
+    if not input_devices:
+        print("No microphone detected.")
+        sys.exit(1)
+
+    if not output_devices:
+        print("No speaker detected.")
+        sys.exit(1)
+
+    print("🎙️ Voice Mode Sales Trainer")
+    print("=" * 40)
+
+    main()
