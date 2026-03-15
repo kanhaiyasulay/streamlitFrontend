@@ -1,0 +1,190 @@
+import { useNavigate } from "react-router-dom";
+import { useState, useRef } from "react";
+import { FiArrowLeft, FiGlobe, FiEdit3, FiPhoneOff, FiUser, FiMic } from "react-icons/fi";
+
+export default function TalkCustomer() {
+
+  const navigate = useNavigate();
+
+  const [language, setLanguage] = useState("English");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | connecting | connected | error | disconnected
+  const [transcript, setTranscript] = useState([]);
+  const sessionRef = useRef(null);
+
+  const API_BASE = "http://localhost:8000";
+
+  const startConversation = async () => {
+    try {
+      setStatus("connecting");
+      const res = await fetch(`${API_BASE}/start-conversation`, { method: "POST" });
+      const data = await res.json();
+      if (data.status === "started" || data.status === "already_running") {
+        setStatus("connected");
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const endConversation = async () => {
+    setStatus("disconnected");
+    try {
+      const res = await fetch(`${API_BASE}/end-conversation`, { method: "POST" });
+      const data = await res.json();
+
+      navigate("/customer-session-report", {
+        state: {
+          strength: data.strength || "N/A",
+          weakness: data.weakness || "N/A",
+          rating: data.rating ?? 0,
+          summary: data.summary || "",
+          transcript: data.transcript || [],
+          language,
+          systemPrompt,
+        },
+      });
+    } catch {
+      navigate("/customer-session-report", {
+        state: {
+          strength: "Evaluation unavailable",
+          weakness: "Evaluation unavailable",
+          rating: 0,
+          summary: "Could not reach the backend.",
+          transcript: [],
+          language,
+          systemPrompt,
+        },
+      });
+    }
+  };
+
+  const isLive = status === "connected";
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6 relative">
+      {/* Background orbs */}
+      <div className="fixed top-[-15%] left-[-10%] w-[400px] h-[400px] bg-indigo-600/15 rounded-full blur-[100px] pointer-events-none" />
+      <div className="fixed bottom-[-15%] right-[-10%] w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+      {/* Back button */}
+      <button
+        onClick={() => { sessionRef.current?.stop(); navigate("/dashboard"); }}
+        className="absolute top-6 left-6 flex items-center gap-2 text-sm text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl transition-all duration-200"
+      >
+        <FiArrowLeft /> Back
+      </button>
+
+      <div className="relative animate-fade-in w-full max-w-md">
+
+        <h1 className="text-2xl font-bold text-center mb-8 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+          Talk to Customer
+        </h1>
+
+        {/* Language Dropdown */}
+        <div className="mb-5">
+          <label className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-300">
+            <FiGlobe className="text-indigo-400" /> Select Language
+          </label>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            disabled={isLive}
+            className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/25 transition-all appearance-none cursor-pointer disabled:opacity-50"
+          >
+            <option className="bg-slate-900">English</option>
+            <option className="bg-slate-900">Hindi</option>
+            <option className="bg-slate-900">Polish</option>
+            <option className="bg-slate-900">French</option>
+            <option className="bg-slate-900">Norwegian</option>
+          </select>
+        </div>
+
+        {/* System Prompt */}
+        <div className="mb-8">
+          <label className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-300">
+            <FiEdit3 className="text-indigo-400" /> System Prompt
+          </label>
+          <textarea
+            placeholder="Example: Behave like a polite SaaS sales assistant..."
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            disabled={isLive}
+            className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-slate-200 placeholder-slate-600 h-24 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/25 transition-all disabled:opacity-50"
+          />
+        </div>
+
+        {/* Avatar */}
+        <div className="flex justify-center mb-4">
+          <div className="relative">
+            {isLive && <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-cyan-400 rounded-full animate-pulse-ring" />}
+            <div className={`relative w-36 h-36 rounded-full flex items-center justify-center border-2 shadow-xl transition-all duration-500 ${
+              isLive
+                ? "bg-gradient-to-br from-indigo-900 to-slate-800 border-indigo-500/30"
+                : "bg-gradient-to-br from-slate-800 to-slate-700 border-white/10"
+            }`}>
+              <FiUser className={`text-4xl transition-colors ${isLive ? "text-indigo-300" : "text-slate-400"}`} />
+            </div>
+          </div>
+        </div>
+
+        {/* Status indicator */}
+        <div className="text-center mb-6">
+          <span className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full ${
+            status === "connected" ? "bg-emerald-500/10 text-emerald-400" :
+            status === "connecting" ? "bg-amber-500/10 text-amber-400" :
+            status === "error" ? "bg-red-500/10 text-red-400" :
+            "bg-white/5 text-slate-500"
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              status === "connected" ? "bg-emerald-400 animate-pulse" :
+              status === "connecting" ? "bg-amber-400 animate-pulse" :
+              status === "error" ? "bg-red-400" :
+              "bg-slate-600"
+            }`} />
+            {status === "connected" ? "Live — speak now" :
+             status === "connecting" ? "Connecting..." :
+             status === "error" ? "Connection failed" :
+             "Not connected"}
+          </span>
+        </div>
+
+        {/* Transcript */}
+        {transcript.length > 0 && (
+          <div className="mb-6 max-h-40 overflow-y-auto space-y-2 bg-white/5 border border-white/10 rounded-xl p-4">
+            {transcript.map((msg, i) => (
+              <p key={i} className={`text-sm ${msg.role === "user" ? "text-indigo-300" : "text-emerald-300"}`}>
+                <span className="font-semibold">{msg.role === "user" ? "You" : "AI"}:</span> {msg.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div className="flex justify-center gap-4">
+          {!isLive ? (
+            <button
+              onClick={startConversation}
+              disabled={status === "connecting"}
+              className="group flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 px-8 py-3.5 rounded-xl text-white font-medium transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 disabled:opacity-50"
+            >
+              <FiMic className="transition-transform group-hover:scale-110" />
+              {status === "connecting" ? "Connecting..." : "Talk to Customer"}
+            </button>
+          ) : (
+            <button
+              onClick={endConversation}
+              className="group flex items-center gap-2 bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 px-8 py-3.5 rounded-xl text-white font-medium transition-all duration-300 shadow-lg shadow-red-500/20 hover:shadow-red-500/30"
+            >
+              <FiPhoneOff className="transition-transform group-hover:rotate-12" />
+              End Conversation
+            </button>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
