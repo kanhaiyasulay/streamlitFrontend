@@ -1,305 +1,134 @@
-# -------------------------------------------------------------------------
-# Voice Mode Agent - Sales Training Simulator (Avatar Enabled)
-# -------------------------------------------------------------------------
+You are working on a full stack project with the following folder structure:
 
-from __future__ import annotations
-import os
-import sys
-import asyncio
-import base64
-from datetime import datetime
-import logging
-import queue
-from typing import Optional, TYPE_CHECKING, cast
+UI/
+ ├── backend/
+ │    ├── voice_live_quickstart.py
+ │    ├── .env
+ │    ├── requirements.txt
+ │
+ └── VMA-frontend/
+      ├── src/
+      │   ├── pages/
+      │   ├── components/
+      │   ├── App.jsx
+      │   └── other React files
+      └── package.json
 
-from azure.core.credentials import AzureKeyCredential
 
-from azure.ai.voicelive.aio import connect
-from azure.ai.voicelive.models import (
-    AudioEchoCancellation,
-    AudioNoiseReduction,
-    AzureStandardVoice,
-    InputAudioFormat,
-    Modality,
-    OutputAudioFormat,
-    RequestSession,
-    ServerEventType,
-    ServerVad
-)
+PROJECT CONTEXT
 
-from dotenv import load_dotenv
-import pyaudio
+The frontend is a React application located in VMA-frontend.
+The backend folder contains a Python script `voice_live_quickstart.py`.
 
-if TYPE_CHECKING:
-    from azure.ai.voicelive.aio import VoiceLiveConnection
+The file `voice_live_quickstart.py` already works and is responsible for connecting to the Azure Voice Live API and enabling voice-to-voice conversation with the AI agent.
 
+The `.env` file in the backend folder already contains all required Azure credentials and environment variables.
 
-load_dotenv("./.env", override=True)
+Currently the backend script works when run manually, but it is NOT exposed as an HTTP API that the React frontend can call.
 
-# Queue for sending text to avatar
-avatar_queue = queue.Queue()
+Your job is to create a small FastAPI backend wrapper around this script so the React frontend can trigger the voice interaction.
 
+IMPORTANT CONSTRAINTS
 
-# -------------------------------------------------------------------------
-# AUDIO PROCESSOR
-# -------------------------------------------------------------------------
+Do NOT modify the core Azure voice logic inside `voice_live_quickstart.py`.
 
-class AudioProcessor:
+Do NOT implement:
+- authentication
+- databases
+- reports
+- deal clinic logic
+- analytics
+- session history storage
 
-    loop: asyncio.AbstractEventLoop
+This backend should ONLY act as a thin API layer that triggers the existing voice agent.
 
-    class AudioPlaybackPacket:
-        def __init__(self, seq_num: int, data: Optional[bytes]):
-            self.seq_num = seq_num
-            self.data = data
+The goal is simply to allow the React frontend to:
 
-    def __init__(self, connection):
+1) Start a conversation with the AI voice agent
+2) End the conversation
 
-        self.connection = connection
-        self.audio = pyaudio.PyAudio()
 
-        self.format = pyaudio.paInt16
-        self.channels = 1
-        self.rate = 24000
-        self.chunk_size = 1200
+BACKEND REQUIREMENTS
 
-        self.input_stream = None
-        self.output_stream: Optional[pyaudio.Stream] = None
+Create a FastAPI backend inside the `backend` folder.
 
-        self.playback_queue: queue.Queue[
-            AudioProcessor.AudioPlaybackPacket
-        ] = queue.Queue()
+Add a new file:
 
-        self.playback_base = 0
-        self.next_seq_num = 0
+backend/main.py
 
-    def start_capture(self):
+This file should expose two API endpoints:
 
-        def _capture_callback(in_data, _frame_count, _time_info, _status_flags):
 
-            audio_base64 = base64.b64encode(in_data).decode("utf-8")
+1) START CONVERSATION
 
-            asyncio.run_coroutine_threadsafe(
-                self.connection.input_audio_buffer.append(audio=audio_base64),
-                self.loop
-            )
+POST /start-conversation
 
-            return (None, pyaudio.paContinue)
+This endpoint should start the voice interaction by calling the logic inside `voice_live_quickstart.py`.
 
-        if self.input_stream:
-            return
+This endpoint will be called when the user clicks the **"Talk to Customer"** button in the React UI.
 
-        self.loop = asyncio.get_event_loop()
+The backend should start the voice session asynchronously so the server does not block.
 
-        self.input_stream = self.audio.open(
-            format=self.format,
-            channels=self.channels,
-            rate=self.rate,
-            input=True,
-            frames_per_buffer=self.chunk_size,
-            stream_callback=_capture_callback,
-        )
 
-    def start_playback(self):
+2) END CONVERSATION
 
-        if self.output_stream:
-            return
+POST /end-conversation
 
-        remaining = bytes()
+This endpoint should gracefully stop the running voice session.
 
-        def _playback_callback(_in_data, frame_count, _time_info, _status_flags):
 
-            nonlocal remaining
-            frame_count *= pyaudio.get_sample_size(pyaudio.paInt16)
+SERVER REQUIREMENTS
 
-            out = remaining[:frame_count]
-            remaining = remaining[frame_count:]
+Use FastAPI + Uvicorn.
 
-            while len(out) < frame_count:
+Add CORS middleware so that the React frontend running on localhost can call the backend.
 
-                try:
-                    packet = self.playback_queue.get_nowait()
-                except queue.Empty:
-                    out += bytes(frame_count - len(out))
-                    continue
+Allow all origins for now (development mode).
 
-                if not packet or not packet.data:
-                    break
 
-                if packet.seq_num < self.playback_base:
-                    remaining = bytes()
-                    continue
+FRONTEND INTEGRATION
 
-                num_to_take = frame_count - len(out)
-                out += packet.data[:num_to_take]
-                remaining = packet.data[num_to_take:]
+The React frontend should call the backend like this:
 
-            return (out, pyaudio.paContinue)
+START SESSION
 
-        self.output_stream = self.audio.open(
-            format=self.format,
-            channels=self.channels,
-            rate=self.rate,
-            output=True,
-            frames_per_buffer=self.chunk_size,
-            stream_callback=_playback_callback
-        )
+POST http://localhost:8000/start-conversation
 
-    def queue_audio(self, audio_data: Optional[bytes]):
+Triggered when the user clicks "Talk to Customer".
 
-        self.playback_queue.put(
-            AudioProcessor.AudioPlaybackPacket(
-                seq_num=self.next_seq_num,
-                data=audio_data
-            )
-        )
 
-        self.next_seq_num += 1
+END SESSION
 
-    def skip_pending_audio(self):
-        self.playback_base = self.next_seq_num
-        self.next_seq_num += 1
+POST http://localhost:8000/end-conversation
 
+Triggered when the user clicks "End Conversation".
 
-# -------------------------------------------------------------------------
-# VOICE ASSISTANT
-# -------------------------------------------------------------------------
 
-class BasicVoiceAssistant:
+EXPECTED OUTPUT
 
-    def __init__(self, endpoint, credential, model, voice):
+1) Create backend/main.py
+2) Show the FastAPI server setup
+3) Show how to start the server with uvicorn
+4) Show the minimal React fetch() calls needed to trigger the endpoints
+5) Explain how the React buttons should call these endpoints
 
-        self.endpoint = endpoint
-        self.credential = credential
-        self.model = model
-        self.voice = voice
 
-        self.connection: Optional["VoiceLiveConnection"] = None
-        self.audio_processor: Optional[AudioProcessor] = None
+IMPORTANT
 
-        self.conversation_history = []
+Do NOT rewrite the React project.
 
-    async def start(self):
+Only provide the minimal integration needed so the existing React UI can trigger the backend voice agent.
 
-        async with connect(
-            endpoint=self.endpoint,
-            credential=self.credential,
-            model=self.model,
-        ) as connection:
 
-            self.connection = connection
+GOAL
 
-            ap = AudioProcessor(connection)
-            self.audio_processor = ap
+After this is implemented:
 
-            await self._setup_session()
+User clicks **Talk to Customer**
+→ React calls backend API
+→ backend triggers voice_live_quickstart.py
+→ voice conversation begins
 
-            ap.start_playback()
-
-            print("\n🎤 SALES TRAINING SIMULATOR READY\n")
-
-            await self._process_events()
-
-    async def _setup_session(self):
-
-        voice_config = AzureStandardVoice(name=self.voice)
-
-        turn_detection_config = ServerVad(
-            threshold=0.5,
-            prefix_padding_ms=300,
-            silence_duration_ms=2000
-        )
-
-        session_config = RequestSession(
-
-            modalities=[Modality.TEXT, Modality.AUDIO],
-
-            instructions="""
-You are pretending to be a potential customer evaluating a product.
-Be curious and slightly skeptical.
-""",
-
-            voice=voice_config,
-
-            input_audio_format=InputAudioFormat.PCM16,
-            output_audio_format=OutputAudioFormat.PCM16,
-
-            turn_detection=turn_detection_config,
-
-            input_audio_echo_cancellation=AudioEchoCancellation(),
-            input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
-        )
-
-        await self.connection.session.update(session=session_config)
-
-    async def _process_events(self):
-
-        async for event in self.connection:
-            await self._handle_event(event)
-
-    async def _handle_event(self, event):
-
-        ap = self.audio_processor
-
-        if event.type == ServerEventType.SESSION_UPDATED:
-            ap.start_capture()
-
-        elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-            print("🎤 Listening...")
-            ap.skip_pending_audio()
-
-        elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
-            print("🤔 Processing...")
-
-        elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
-            ap.queue_audio(event.delta)
-
-        elif event.type == ServerEventType.CONVERSATION_ITEM_CREATED:
-
-            text = ""
-            role = event.item.role
-
-            if hasattr(event.item, "content") and event.item.content:
-                for part in event.item.content:
-                    if hasattr(part, "text"):
-                        text += part.text
-
-            if text:
-
-                print(f"{role.upper()}: {text}")
-
-                self.conversation_history.append({
-                    "role": role,
-                    "text": text
-                })
-
-                # Send response to avatar
-                if role == "assistant":
-                    avatar_queue.put(text)
-
-
-# -------------------------------------------------------------------------
-# MAIN
-# -------------------------------------------------------------------------
-
-def main():
-
-    endpoint = os.environ.get("AZURE_VOICELIVE_ENDPOINT")
-    api_key = os.environ.get("AZURE_VOICELIVE_API_KEY")
-    model = os.environ.get("AZURE_VOICELIVE_MODEL", "gpt-realtime")
-    voice = os.environ.get("AZURE_VOICELIVE_VOICE", "en-US-Ava:DragonHDLatestNeural")
-
-    credential = AzureKeyCredential(api_key)
-
-    assistant = BasicVoiceAssistant(
-        endpoint,
-        credential,
-        model,
-        voice
-    )
-
-    asyncio.run(assistant.start())
-
-
-if __name__ == "__main__":
-    main()
+User clicks **End Conversation**
+→ React calls backend API
+→ backend stops the voice session
