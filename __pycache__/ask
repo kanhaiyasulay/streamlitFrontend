@@ -1,113 +1,151 @@
-import streamlit as st
-import asyncio
+# -------------------------------------------------------------------------
+# FastAPI wrapper for Voice Live quickstart
+# -------------------------------------------------------------------------
+
+import json
 import os
+import sys
+import subprocess
+
+import requests
 from dotenv import load_dotenv
-from azure.core.credentials import AzureKeyCredential
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from voice_live_quickstart import BasicVoiceAssistant
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"), override=True)
 
-load_dotenv()
+app = FastAPI(title="Voice Mode Agent API")
 
-st.set_page_config(
-    page_title="AI Sales Training Simulator",
-    page_icon="🎤",
-    layout="wide"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-st.title("🎤 AI Sales Training Simulator")
-st.write("Practice your sales pitch with an AI customer.")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+CONVERSATION_FILE = os.path.join(BACKEND_DIR, "logs", "last_conversation.json")
 
-# Sidebar settings
-st.sidebar.header("Settings")
+# Holds the running voice subprocess
+_voice_process: subprocess.Popen | None = None
 
-voice = st.sidebar.selectbox(
-    "AI Voice",
-    [
-        "en-US-Ava:DragonHDLatestNeural",
-        "en-US-Guy:DragonHDLatestNeural"
-    ]
-)
 
-scenario = st.sidebar.selectbox(
-    "Customer Personality",
-    [
-        "Curious Customer",
-        "Price Sensitive Customer",
-        "Skeptical Customer"
-    ]
-)
+def _read_conversation() -> list[dict]:
+    """Read the saved conversation history JSON."""
+    if os.path.exists(CONVERSATION_FILE):
+        with open(CONVERSATION_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-# Initialize session state
-if "conversation" not in st.session_state:
-    st.session_state.conversation = []
 
-if "running" not in st.session_state:
-    st.session_state.running = False
+def _generate_evaluation(conversation: list[dict]) -> dict:
+    """Call Azure OpenAI chat completions to evaluate the sales conversation."""
+    endpoint = os.getenv("AZURE_VOICELIVE_ENDPOINT", "").rstrip("/")
+    api_key = os.getenv("AZURE_VOICELIVE_API_KEY", "")
+    model = os.getenv("AZURE_VOICELIVE_MODEL", "gpt-4.1-mini")
 
-col1, col2 = st.columns(2)
+    if not conversation:
+        return {
+            "strength": "No conversation recorded.",
+            "weakness": "N/A",
+            "rating": 0,
+            "summary": "The session ended before any conversation took place.",
+        }
 
-with col1:
-    start_btn = st.button("▶ Start Conversation")
+    transcript = "\n".join(f"{m['role']}: {m['text']}" for m in conversation)
 
-with col2:
-    stop_btn = st.button("⏹ Stop & Evaluate")
+    url = f"{endpoint}/openai/deployments/{model}/chat/completions?api-version=2024-12-01-preview"
+    headers = {"api-key": api_key, "Content-Type": "application/json"}
+    body = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert sales trainer. Evaluate the salesperson based on "
+                    "the conversation transcript below. Respond ONLY with valid JSON in "
+                    "this exact format:\n"
+                    '{"strength": "...", "weakness": "...", "rating": 7.5, "summary": "..."}\n'
+                    "rating must be a number from 0 to 10."
+                ),
+            },
+            {"role": "user", "content": transcript},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 500,
+    }
 
-endpoint = os.environ.get("AZURE_VOICELIVE_ENDPOINT")
-api_key = os.environ.get("AZURE_VOICELIVE_API_KEY")
-model = os.environ.get("AZURE_VOICELIVE_MODEL", "gpt-realtime")
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=30)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        # Parse the JSON from the model response
+        evaluation = json.loads(content)
+        # Ensure expected keys exist
+        return {
+            "strength": evaluation.get("strength", ""),
+            "weakness": evaluation.get("weakness", ""),
+            "rating": float(evaluation.get("rating", 0)),
+            "summary": evaluation.get("summary", ""),
+        }
+    except Exception as e:
+        return {
+            "strength": "Evaluation unavailable",
+            "weakness": "Evaluation unavailable",
+            "rating": 0,
+            "summary": f"Could not generate evaluation: {e}",
+        }
 
-credential = AzureKeyCredential(api_key)
 
-async def run_agent():
-    assistant = BasicVoiceAssistant(
-        endpoint,
-        credential,
-        model,
-        voice,
-        instructions=""
+@app.post("/start-conversation")
+async def start_conversation():
+    global _voice_process
+
+    if _voice_process is not None and _voice_process.poll() is None:
+        return {"status": "already_running", "message": "Voice session is already active."}
+
+    # Clear old conversation file
+    if os.path.exists(CONVERSATION_FILE):
+        os.remove(CONVERSATION_FILE)
+
+    _voice_process = subprocess.Popen(
+        [sys.executable, "voice_live_quickstart.py"],
+        cwd=BACKEND_DIR,
     )
 
-    await assistant.start()
+    return {"status": "started", "message": "Voice session started."}
 
-if start_btn:
 
-    st.session_state.running = True
+@app.post("/end-conversation")
+async def end_conversation():
+    global _voice_process
 
-    st.success("Voice session started. Speak into your microphone.")
+    # Stop the running voice process
+    if _voice_process is not None and _voice_process.poll() is None:
+        _voice_process.terminate()
+        try:
+            _voice_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _voice_process.kill()
+    _voice_process = None
 
-    asyncio.run(run_agent())
+    # Read conversation history saved by the voice script
+    conversation = _read_conversation()
 
-if stop_btn:
+    # Generate AI evaluation
+    evaluation = _generate_evaluation(conversation)
 
-    st.warning("Generating evaluation...")
+    return {
+        "status": "stopped",
+        "transcript": conversation,
+        **evaluation,
+    }
 
-# Conversation display
 
-st.header("💬 Conversation")
+@app.get("/status")
+async def get_status():
+    if _voice_process is not None and _voice_process.poll() is None:
+        return {"status": "running"}
+    return {"status": "idle"}
+    return {"status": "idle"}
 
-chat_container = st.container()
-
-with chat_container:
-
-    if st.session_state.conversation:
-
-        for msg in st.session_state.conversation:
-
-            if msg["role"] == "user":
-                st.chat_message("user").write(msg["text"])
-            else:
-                st.chat_message("assistant").write(msg["text"])
-
-    else:
-        st.info("Conversation will appear here once the session starts.")
-
-# Evaluation area
-
-st.header("📊 Performance Evaluation")
-
-evaluation_placeholder = st.empty()
-
-if not st.session_state.running:
-    evaluation_placeholder.info(
-        "Evaluation will appear after the conversation ends."
-    )
