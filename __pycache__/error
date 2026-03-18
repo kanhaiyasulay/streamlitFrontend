@@ -1,17 +1,111 @@
-"content": (
-    "You are an expert sales trainer. Evaluate the salesperson based on "
-    "the conversation transcript below.\n\n"
+import { useLocation, useNavigate } from "react-router-dom";
+import { FiArrowLeft, FiThumbsUp, FiAlertCircle, FiStar, FiMessageSquare } from "react-icons/fi";
 
-    "Respond ONLY in valid JSON format:\n"
-    "{\n"
-    '  "strength": ["point1", "point2", "point3"],\n'
-    '  "weakness": ["point1", "point2", "point3"],\n'
-    '  "rating": 7.5,\n'
-    '  "summary": "short paragraph"\n'
-    "}\n\n"
+export default function CustomerSessionReport() {
 
-    "IMPORTANT:\n"
-    "- strength and weakness MUST be arrays (bullet points)\n"
-    "- Do not return paragraphs inside them\n"
-    "- rating must be between 0 to 10"
-)
+  const location = useLocation();
+  const navigate = useNavigate();
+  const report = location.state;
+
+  return (
+    <div className="min-h-screen relative">
+      <div className="fixed top-[-10%] left-[-5%] w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="fixed bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="relative max-w-5xl mx-auto px-6 py-12">
+
+        <button
+          onClick={() => navigate("/dashboard")}
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl transition-all duration-200 mb-8"
+        >
+          <FiArrowLeft /> Back
+        </button>
+
+        <h1 className="text-3xl font-bold mb-10 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent animate-fade-in">
+          Latest Customer Interaction Report
+        </h1>
+
+        {/* Evaluation Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-6 rounded-2xl animate-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-green-400 flex items-center justify-center">
+                <FiThumbsUp className="text-white" />
+              </div>
+              <h2 className="font-semibold text-slate-200">Strength</h2>
+            </div>
+            <p className="text-slate-400">{report?.strength}</p>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-6 rounded-2xl animate-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-400 flex items-center justify-center">
+                <FiAlertCircle className="text-white" />
+              </div>
+              <h2 className="font-semibold text-slate-200">Weakness</h2>
+            </div>
+            <p className="text-slate-400">{report?.weakness}</p>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 p-6 rounded-2xl animate-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-400 flex items-center justify-center">
+                <FiStar className="text-white" />
+              </div>
+              <h2 className="font-semibold text-slate-200">Rating</h2>
+            </div>
+            <p className="text-2xl font-bold text-indigo-400">{report?.rating}<span className="text-sm font-normal text-slate-500"> / 10</span></p>
+          </div>
+
+        </div>
+
+        {/* Summary */}
+        {report?.summary && (
+          <div className="mt-8 bg-white/5 backdrop-blur-sm border border-white/10 p-6 rounded-2xl animate-fade-in">
+            <h2 className="font-semibold text-slate-200 mb-3">Summary</h2>
+            <p className="text-slate-400 leading-relaxed">{report.summary}</p>
+          </div>
+        )}
+
+        {/* Conversation Transcript */}
+        {report?.transcript && report.transcript.length > 0 && (
+          <div className="mt-8 bg-white/5 backdrop-blur-sm border border-white/10 p-6 rounded-2xl animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-400 flex items-center justify-center">
+                <FiMessageSquare className="text-white" />
+              </div>
+              <h2 className="font-semibold text-slate-200">Conversation Transcript</h2>
+            </div>
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+              {report.transcript.map((msg, i) => (
+                <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-indigo-500/15 border border-indigo-500/20 text-indigo-200"
+                      : "bg-white/5 border border-white/10 text-slate-300"
+                  }`}>
+                    <span className={`text-xs font-semibold block mb-1 ${
+                      msg.role === "user" ? "text-indigo-400" : "text-emerald-400"
+                    }`}>
+                      {msg.role === "user" ? "You" : "Customer (AI)"}
+                    </span>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => navigate("/talk-customer")}
+          className="mt-10 group flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-cyan-500 px-6 py-3.5 rounded-xl text-white font-medium transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30"
+        >
+          Start New Conversation
+        </button>
+
+      </div>
+    </div>
+  );
+}
