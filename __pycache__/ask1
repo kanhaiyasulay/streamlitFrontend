@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------
-# Voice Mode Agent - Sales Training Simulator
+# Voice Mode Agent - Sales Training Simulator  (debounce time)
 # -------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class AudioProcessor:
         self.format = pyaudio.paInt16
         self.channels = 1
         self.rate = 24000
-        self.chunk_size = 1200
+        self.chunk_size = 480 # 1200
 
         self.input_stream = None
 
@@ -242,9 +242,9 @@ class BasicVoiceAssistant:
         voice_config = AzureStandardVoice(name=self.voice)
 
         turn_detection_config = ServerVad(
-            threshold=0.5, #0.3
-            prefix_padding_ms=300, #200
-            silence_duration_ms=2000
+            threshold=0.4, #0.5
+            prefix_padding_ms=300, #100 - 150
+            silence_duration_ms=445 #2000
         )
 
         session_config = RequestSession(
@@ -298,36 +298,49 @@ class BasicVoiceAssistant:
         elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
             ap.queue_audio(event.delta)
 
-        elif event.type == ServerEventType.CONVERSATION_ITEM_CREATED:
+        elif event.type in [ServerEventType.CONVERSATION_ITEM_CREATED, ServerEventType.RESPONSE_OUTPUT_ITEM_DONE]:
+
+            item = None
+
+            # Case 1: normal conversation event
+            if hasattr(event, "item"):
+                item = event.item
+
+            # Case 2: response.output_item.done (assistant)
+            elif hasattr(event, "item_id") and hasattr(event, "type") and event.type == ServerEventType.RESPONSE_OUTPUT_ITEM_DONE:
+                if hasattr(event, "item"):
+                    item = event.item
+
+            # Safety check
+            if not item:
+                return
 
             text = ""
-            role = event.item.role
+            role = item.get("role") if isinstance(item, dict) else item.role
 
-            if hasattr(event.item, "content") and event.item.content:
-                for part in event.item.content:
-                    # Case 1 : dictionary with key "transcript"
+            content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+
+            if content:
+                for part in content:
                     if isinstance(part, dict):
                         text += part.get("text", "") or part.get("transcript", "")
-                    # Case 2: object (future-safe)
                     else:
-                        text += getattr(part, "text", "") or getattr(part, "transcript", "") 
+                        text += getattr(part, "text", "") or getattr(part, "transcript", "")
 
-            if text:
-
+            if text.strip():
                 print(f"{role.upper()}: {text}")
 
                 self.conversation_history.append({
                     "role": role,
                     "text": text
                 })
+
                 self._save_conversation()
 
+                # exit logic only for user
                 if role == "user" and "exit" in text.lower():
-
                     print("\nGenerating evaluation...\n")
-
                     await self.generate_evaluation()
-
                     os._exit(0)
 
     async def generate_evaluation(self):
