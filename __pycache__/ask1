@@ -242,8 +242,8 @@ class BasicVoiceAssistant:
         voice_config = AzureStandardVoice(name=self.voice)
 
         turn_detection_config = ServerVad(
-            threshold=0.5,
-            prefix_padding_ms=300,
+            threshold=0.5, #0.3
+            prefix_padding_ms=300, #200
             silence_duration_ms=2000
         )
 
@@ -251,17 +251,7 @@ class BasicVoiceAssistant:
 
             modalities=[Modality.TEXT, Modality.AUDIO],
 
-            instructions="""
-You are pretending to be a potential customer evaluating a product.
-
-Your personality:
-- Curious
-- Slightly skeptical
-- Ask realistic questions
-- Raise objections about price, ROI, competitors
-
-Speak naturally like a human customer.
-""",
+            instructions=self.instructions,
 
             voice=voice_config,
 
@@ -367,12 +357,28 @@ def main():
 
     credential = AzureKeyCredential(api_key)
 
+    base_instructions = """
+You are pretending to be a potential customer evaluating a product.
+
+Your personality:
+- Curious
+- Slightly skeptical
+- Ask realistic questions
+- Raise objections about price, ROI, competitors
+
+Speak naturally like a human customer.
+"""
+
+    extra = os.environ.get("EXTRA_SYSTEM_PROMPT", "").strip()
+    if extra:
+        base_instructions += f"\n\nAdditional context:\n{extra}\n"
+
     assistant = BasicVoiceAssistant(
         endpoint,
         credential,
         model,
         voice,
-        instructions=""
+        instructions=base_instructions
     )
 
     asyncio.run(assistant.start())
