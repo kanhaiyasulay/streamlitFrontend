@@ -34,8 +34,11 @@ _voice_process: subprocess.Popen | None = None
 def _read_conversation() -> list[dict]:
     """Read the saved conversation history JSON."""
     if os.path.exists(CONVERSATION_FILE):
-        with open(CONVERSATION_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(CONVERSATION_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
     return []
 
 
@@ -98,7 +101,7 @@ def _generate_evaluation(conversation: list[dict]) -> dict:
 
 
 @app.post("/start-conversation")
-async def start_conversation():
+async def start_conversation(body: dict = None):
     global _voice_process
 
     if _voice_process is not None and _voice_process.poll() is None:
@@ -108,9 +111,14 @@ async def start_conversation():
     if os.path.exists(CONVERSATION_FILE):
         os.remove(CONVERSATION_FILE)
 
+    env = os.environ.copy()
+    if body and body.get("system_prompt"):
+        env["EXTRA_SYSTEM_PROMPT"] = body["system_prompt"]
+
     _voice_process = subprocess.Popen(
         [sys.executable, "voice_live_quickstart.py"],
         cwd=BACKEND_DIR,
+        env=env,
     )
 
     return {"status": "started", "message": "Voice session started."}
@@ -148,4 +156,3 @@ async def get_status():
         return {"status": "running"}
     return {"status": "idle"}
     return {"status": "idle"}
-
