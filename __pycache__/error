@@ -1,30 +1,17 @@
-🎤 SALES TRAINING SIMULATOR READY
-Speak like a salesperson.
-Say 'exit' to finish and get evaluation.
+"content": (
+    "You are an expert sales trainer. Evaluate the salesperson based on "
+    "the conversation transcript below.\n\n"
 
-EVENT TYPE: session.created
-RAW EVENT: {'event_id': 'event_5AKnJsmweF17d3DJkgBnj2', 'type': 'session.created', 'session': {'id': 'sess_3SEi35eafSRxe2J4niamkj', 'model': 'gpt-4.1-mini-2025-04-14', 'modalities': ['text', 'audio'], 'instructions': 'You are a speech chat assistant.\nYour personality is: The AI is engaging, informative, and empathetic.\nThe AI is curious and is always interested in learning more about the human.\nThe AI is calm and polite. You are great at asking questions and is a sensitive listener.\nYou are relentlessly curious, but always polite and never probes too much.\nYou are pretty smart but humble, and tries to keep things informal. Overall, You are pretty Zen.\nYou are also: Relaxed, informal, chatty. Fun, and sometimes funny. Occasionally cheeky, and light-hearted.\nDo not use markdown format, plain text is preferred.', 'voice': {'name': 'en-US-AvaNeural', 'type': 'azure-standard', 'temperature': None, 'custom_lexicon_url': None, 'custom_text_normalization_url': None, 'prefer_locales': None, 'locale': None, 'style': None, 'pitch': None, 'rate': None, 'volume': None}, 'input_audio_format': 'pcm16', 'output_audio_format': 'pcm16', 'input_audio_transcription': {'model': 'azure-speech', 'language': None, 'prompt': None, 'custom_speech': None, 'phrase_list': None}, 'input_audio_noise_reduction': None, 'turn_detection': {'type': 'server_vad', 'threshold': 0.5, 'prefix_padding_ms': 300, 'silence_duration_ms': 200, 'create_response': True, 'interrupt_response': True, 'idle_timeout_ms': None, 'speech_duration_ms': None, 'end_of_utterance_detection': None, 'auto_truncate': False, 'appended_text_after_truncation': None}, 'tools': [], 'tool_choice': 'auto', 'temperature': 0.8, 'max_response_output_tokens': 'inf', 'object': 'realtime.session', 'input_audio_sampling_rate': 24000, 'animation': None, 'input_audio_echo_cancellation': None, 'avatar': None, 'output_audio_timestamp_types': None, 'truncation_strategy': None, 'include': None}}
-Traceback (most recent call last):
-  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 419, in <module>
-    main()
-  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 390, in main
-    asyncio.run(assistant.start())
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 190, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\base_events.py", line 654, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 238, in start
-    await self._process_events()
-  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 272, in _process_events
-    await self._handle_event(event)
-  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 279, in _handle_event
-    print("CONTENT: ", getattr(event.item, "content", None))
-                               ^^^^^^^^^^
-AttributeError: 'ServerEventSessionCreated' object has no attribute 'item'. Did you mean: 'items'?
+    "Respond ONLY in valid JSON format:\n"
+    "{\n"
+    '  "strength": ["point1", "point2", "point3"],\n'
+    '  "weakness": ["point1", "point2", "point3"],\n'
+    '  "rating": 7.5,\n'
+    '  "summary": "short paragraph"\n'
+    "}\n\n"
 
-
+    "IMPORTANT:\n"
+    "- strength and weakness MUST be arrays (bullet points)\n"
+    "- Do not return paragraphs inside them\n"
+    "- rating must be between 0 to 10"
+)
