@@ -305,8 +305,12 @@ class BasicVoiceAssistant:
 
             if hasattr(event.item, "content") and event.item.content:
                 for part in event.item.content:
-                    if hasattr(part, "text"):
-                        text += part.text
+                    # Case 1 : dictionary with key "transcript"
+                    if isinstance(part, dict):
+                        text += part.get("text", "") or part.get("transcript", "")
+                    # Case 2: object (future-safe)
+                    else:
+                        text += getattr(part, "text", "") or getattr(part, "transcript", "") 
 
             if text:
 
