@@ -1,42 +1,42 @@
-item = None
+🎙️ Voice Mode Sales Trainer
+========================================
 
-# Case 1: normal conversation event
-if hasattr(event, "item"):
-    item = event.item
+🎤 SALES TRAINING SIMULATOR READY
+Speak like a salesperson.
+Say 'exit' to finish and get evaluation.
 
-# Case 2: response.output_item.done (assistant)
-elif hasattr(event, "item_id") and hasattr(event, "type") and event.type == ServerEventType.RESPONSE_OUTPUT_ITEM_DONE:
-    if hasattr(event, "item"):
-        item = event.item
+EVENT TYPE: session.created
+RAW EVENT: {'event_id': 'event_3QcaCWWQ7sBzltzt7hIr5s', 'type': 'session.created', 'session': {'id': 'sess_6cuZAITJP6zhFdWoNSKU3Q', 'model': 'gpt-4.1-mini-2025-04-14', 'modalities': ['text', 'audio'], 'instructions': 'You are a speech chat assistant.\nYour personality is: The AI is engaging, informative, and empathetic.\nThe AI is curious and is always interested in learning more about the human.\nThe AI is calm and polite. You are great at asking questions and is a sensitive listener.\nYou are relentlessly curious, but always polite and never probes too much.\nYou are pretty smart but humble, and tries to keep things informal. Overall, You are pretty Zen.\nYou are also: Relaxed, informal, chatty. Fun, and sometimes funny. Occasionally cheeky, and light-hearted.\nDo not use markdown format, plain text is preferred.', 'voice': {'name': 'en-US-AvaNeural', 'type': 'azure-standard', 'temperature': None, 'custom_lexicon_url': None, 'custom_text_normalization_url': None, 'prefer_locales': None, 'locale': None, 'style': None, 'pitch': None, 'rate': None, 'volume': None}, 'input_audio_format': 'pcm16', 'output_audio_format': 'pcm16', 'input_audio_transcription': {'model': 'azure-speech', 'language': None, 'prompt': None, 'custom_speech': None, 'phrase_list': None}, 'input_audio_noise_reduction': None, 'turn_detection': {'type': 'server_vad', 'threshold': 0.5, 'prefix_padding_ms': 300, 'silence_duration_ms': 200, 'create_response': True, 'interrupt_response': True, 'idle_timeout_ms': None, 'speech_duration_ms': None, 'end_of_utterance_detection': None, 'auto_truncate': False, 'appended_text_after_truncation': None}, 'tools': [], 'tool_choice': 'auto', 'temperature': 0.8, 'max_response_output_tokens': 'inf', 'object': 'realtime.session', 'input_audio_sampling_rate': 24000, 'animation': None, 'input_audio_echo_cancellation': None, 'avatar': None, 'output_audio_timestamp_types': None, 'truncation_strategy': None, 'include': None}}
+NO ITEM IN EVENT
+Traceback (most recent call last):
+  File "c:\Users\KANSUL\Desktop\UI\backend\.venv\Lib\site-packages\azure\core\_enum_meta.py", line 64, in __getattr__
+    return cls._member_map_[name.upper()]
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+KeyError: 'RESPONSE_UPDATED_ITEM_DONE'
 
-# Safety check
-if not item:
-    return
+The above exception was the direct cause of the following exception:
 
-text = ""
-role = item.get("role") if isinstance(item, dict) else item.role
-
-content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
-
-if content:
-    for part in content:
-        if isinstance(part, dict):
-            text += part.get("text", "") or part.get("transcript", "")
-        else:
-            text += getattr(part, "text", "") or getattr(part, "transcript", "")
-
-if text.strip():
-    print(f"{role.upper()}: {text}")
-
-    self.conversation_history.append({
-        "role": role,
-        "text": text
-    })
-
-    self._save_conversation()
-
-    # exit logic only for user
-    if role == "user" and "exit" in text.lower():
-        print("\nGenerating evaluation...\n")
-        await self.generate_evaluation()
-        os._exit(0)
+Traceback (most recent call last):
+  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 440, in <module>
+    main()
+  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 411, in main
+    asyncio.run(assistant.start())
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\AppData\Local\Python\pythoncore-3.11-64\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 238, in start
+    await self._process_events()
+  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 272, in _process_events
+    await self._handle_event(event)
+  File "C:\Users\KANSUL\Desktop\UI\backend\voice_live_quickstart.py", line 301, in _handle_event
+    elif event.type in [ServerEventType.CONVERSATION_ITEM_CREATED, ServerEventType.RESPONSE_UPDATED_ITEM_DONE]:
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\KANSUL\Desktop\UI\backend\.venv\Lib\site-packages\azure\core\_enum_meta.py", line 66, in __getattr__
+    raise AttributeError(name) from err
+AttributeError: RESPONSE_UPDATED_ITEM_DONE. Did you mean: 'RESPONSE_OUTPUT_ITEM_DONE'?
