@@ -1,19 +1,42 @@
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}
-NO ITEM IN EVENT
-EVENT TYPE: response.audio.done
-RAW EVENT: {'event_id': 'event_6KLQIpmI85iO28cBWfHHoh', 'type': 'response.audio.done', 'response_id': 'resp_3USEtDgxpab1FRmZboBBzH', 'item_id': 'msg_4HWScSeFAaNY8DtbdSRaCt', 'output_index': 0, 'content_index': 0}
-NO ITEM IN EVENT
-EVENT TYPE: response.audio_transcript.done
-RAW EVENT: {'event_id': 'event_6DnJHpyqSN7q6yDUX0kJLe', 'type': 'response.audio_transcript.done', 'response_id': 'resp_3USEtDgxpab1FRmZboBBzH', 'item_id': 'msg_4HWScSeFAaNY8DtbdSRaCt', 'output_index': 0, 'content_index': 0, 'transcript': 'Got it, so it sounds like your product focuses more on cloud resource monitoring rather than traditional project management. That’s helpful to know. \n\nA couple of questions come to mind:\n- How does the Cloud Operational Agent integrate with existing project management tools like Asana or Trello? \n- Also, what’s the pricing model? Is it subscription-based, per resource, or something else? \n- Lastly, do you have any case studies or examples that show a clear ROI for companies using your product? Because I want to be sure it’s worth the investment compared to other cloud monitoring tools out there.'}
-NO ITEM IN EVENT
-EVENT TYPE: response.content_part.done
-RAW EVENT: {'event_id': 'event_69QTIQ8kulkaAIpydH1V69', 'type': 'response.content_part.done', 'response_id': 'resp_3USEtDgxpab1FRmZboBBzH', 'item_id': 'msg_4HWScSeFAaNY8DtbdSRaCt', 'output_index': 0, 'content_index': 0, 'part': {'type': 'audio', 'transcript': 'Got it, so it sounds like your product focuses more on cloud resource monitoring rather than traditional project management. That’s helpful to know. \n\nA couple of questions come to mind:\n- How does the Cloud Operational Agent integrate with existing project management tools like Asana or Trello? \n- Also, what’s the pricing model? Is it subscription-based, per resource, or something else? \n- Lastly, do you have any case studies or examples that show a clear ROI for companies using your product? Because I want to be sure it’s worth the investment compared to other cloud monitoring tools out there.'}}
-NO ITEM IN EVENT
-EVENT TYPE: response.output_item.done
-RAW EVENT: {'event_id': 'event_4aJIQdzN9mNlDc0plWiF0d', 'type': 'response.output_item.done', 'response_id': 'resp_3USEtDgxpab1FRmZboBBzH', 'output_index': 0, 'item': {'id': 'msg_4HWScSeFAaNY8DtbdSRaCt', 'object': 'realtime.item', 'type': 'message', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'audio', 'transcript': 'Got it, so it sounds like your product focuses more on cloud resource monitoring rather than traditional project management. That’s helpful to know. \n\nA couple of questions come to mind:\n- How does the Cloud Operational Agent integrate with existing project management tools like Asana or Trello? \n- Also, what’s the pricing model? Is it subscription-based, per resource, or something else? \n- Lastly, do you have any case studies or examples that show a clear ROI for companies using your product? Because I want to be sure it’s worth the investment compared to other cloud monitoring tools out there.'}]}}
-ITEM EXISTS
-CONTENT:  [{'type': 'audio', 'transcript': 'Got it, so it sounds like your product focuses more on cloud resource monitoring rather than traditional project management. That’s helpful to know. \n\nA couple of questions come to mind:\n- How does the Cloud Operational Agent integrate with existing project management tools like Asana or Trello? \n- Also, what’s the pricing model? Is it subscription-based, per resource, or something else? \n- Lastly, do you have any case studies or examples that show a clear ROI for companies using your product? Because I want to be sure it’s worth the investment compared to other cloud monitoring tools out there.'}]
-EVENT TYPE: response.done
-RAW EVENT: {'event_id': 'event_5AXgHoPr1PfzR5gzYWTv43', 'type': 'response.done', 'response': {'object': 'realtime.response', 'id': 'resp_3USEtDgxpab1FRmZboBBzH', 'status': 'completed', 'status_details': None, 'output': [{'id': 'msg_4HWScSeFAaNY8DtbdSRaCt', 'object': 'realtime.item', 'type': 'message', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'audio', 'transcript': 'Got it, so it sounds like your product focuses more on cloud resource monitoring rather than traditional project management. That’s helpful to know. \n\nA couple of questions come to mind:\n- How does the Cloud Operational Agent integrate with existing project management tools like Asana or Trello? \n- Also, what’s the pricing model? Is it subscription-based, per resource, or something else? \n- Lastly, do you have any case studies or examples that show a clear ROI for companies using your product? Because I want to be sure it’s worth the investment compared to other cloud monitoring tools out there.'}]}], 'usage': {'total_tokens': 1147, 'input_tokens': 278, 'output_tokens': 869, 'input_token_details': {'cached_tokens': 35, 'text_tokens': 56, 'audio_tokens': 222, 'image_tokens': 0, 'cached_tokens_details': {'text_tokens': 0, 'audio_tokens': 35, 'image_tokens': 0}}, 'output_token_details': {'text_tokens': 122, 'audio_tokens': 747, 'reasoning_tokens': 0}}, 'conversation_id': '', 'modalities': ['text', 'audio'], 'voice': {'name': 'en-US-JennyNeural', 'type': 'azure-standard', 'temperature': None, 'custom_lexicon_url': None, 'custom_text_normalization_url': None, 'prefer_locales': None, 'locale': None, 'style': None, 'pitch': None, 'rate': None, 'volume': None}, 'output_audio_format': None, 'temperature': 0.8, 'max_output_tokens': None, 'metadata': None}}
-NO ITEM IN EVENT
-INFO:     127.0.0.1:49674 - "POST /end-conversation HTTP/1.1" 200 OK
+item = None
+
+# Case 1: normal conversation event
+if hasattr(event, "item"):
+    item = event.item
+
+# Case 2: response.output_item.done (assistant)
+elif hasattr(event, "item_id") and hasattr(event, "type") and event.type == ServerEventType.RESPONSE_OUTPUT_ITEM_DONE:
+    if hasattr(event, "item"):
+        item = event.item
+
+# Safety check
+if not item:
+    return
+
+text = ""
+role = item.get("role") if isinstance(item, dict) else item.role
+
+content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+
+if content:
+    for part in content:
+        if isinstance(part, dict):
+            text += part.get("text", "") or part.get("transcript", "")
+        else:
+            text += getattr(part, "text", "") or getattr(part, "transcript", "")
+
+if text.strip():
+    print(f"{role.upper()}: {text}")
+
+    self.conversation_history.append({
+        "role": role,
+        "text": text
+    })
+
+    self._save_conversation()
+
+    # exit logic only for user
+    if role == "user" and "exit" in text.lower():
+        print("\nGenerating evaluation...\n")
+        await self.generate_evaluation()
+        os._exit(0)
