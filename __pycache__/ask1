@@ -273,6 +273,16 @@ class BasicVoiceAssistant:
 
     async def _handle_event(self, event):
 
+        #debugging
+        print(f"EVENT TYPE: {event.type}")
+        print(f"RAW EVENT: {event}")
+        if(hasattr(event, "item")):
+            print("ITEM EXISTS")
+            print("CONTENT: ", getattr(event.item, "content", None))
+        else:
+            print("NO ITEM IN EVENT")
+
+
         ap = self.audio_processor
 
         if event.type == ServerEventType.SESSION_UPDATED:
@@ -280,7 +290,7 @@ class BasicVoiceAssistant:
 
         elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             print("🎤 Listening...")
-            # ap.skip_pending_audio()
+            ap.skip_pending_audio()
 
         elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
             print("🤔 Processing...")
