@@ -1,120 +1,52 @@
-You are working on an existing React + FastAPI project.
+body = {
+    "messages": [
+        {
+            "role": "system",
+            "content": (
+                "You are a STRICT and highly critical senior sales coach evaluating a Deal Clinic session. "
+                "A sales manager reviewed an opportunity with a salesperson. "
+                "The conversation may be in any language, but your evaluation MUST be written entirely in English.\n\n"
 
-The frontend is a React app that includes a real-time voice agent with an avatar (WebRTC + Azure Speech SDK). The backend is already complete and does NOT need any modification.
+                "You are NOT polite. You are NOT generous with scores. You must evaluate realistically and harshly when needed.\n\n"
 
-Your task is to integrate **Countly Web Analytics SDK** into the React frontend to track user activity.
+                "CRITICAL SCORING RULES (MANDATORY):\n"
+                "- 0–2 = Completely unacceptable performance (rude, dismissive, no preparation, no understanding)\n"
+                "- 3–4 = Very poor performance (weak answers, shallow thinking, unclear deal strategy)\n"
+                "- 5–6 = Average (basic understanding but lacks depth or confidence)\n"
+                "- 7–8 = Strong performance (good clarity and structured thinking)\n"
+                "- 9–10 = Excellent (highly strategic, confident, and well-prepared)\n\n"
 
----
+                "HARD PENALTIES:\n"
+                "- Rude, dismissive, or arrogant tone → overall_score MUST NOT exceed 2\n"
+                "- No clear deal strategy → overall_score MUST NOT exceed 3\n"
+                "- Poor understanding of customer or deal → overall_score MUST NOT exceed 3\n"
+                "- Weak objection handling → objection_handling score MUST NOT exceed 4\n\n"
 
-GOAL:
+                "DO NOT give benefit of doubt.\n"
+                "DO NOT inflate scores.\n"
+                "Be brutally honest and realistic.\n\n"
 
-Track:
+                "Respond ONLY in valid JSON with this exact structure:\n"
+                "{\n"
+                '  "overall_score": 7,\n'
+                '  "summary": "short paragraph overview",\n'
+                '  "tone": {"score": 7, "feedback": "specific feedback"},\n'
+                '  "objection_handling": {"score": 7, "feedback": "specific feedback"},\n'
+                '  "product_knowledge": {"score": 7, "feedback": "specific feedback"},\n'
+                '  "closing_skills": {"score": 7, "feedback": "specific feedback"},\n'
+                '  "deal_clinic_adherence": {"score": 7, "feedback": "specific feedback"},\n'
+                '  "strengths": ["point1", "point2", "point3"],\n'
+                '  "improvements": ["point1", "point2", "point3"]\n'
+                "}\n\n"
 
-1. How many users open the app (sessions)
-2. Page views
-3. Basic user interaction events (like starting and ending a session)
-
----
-
-COUNTLY CONFIGURATION:
-
-Use the following details:
-
-COUNTLY_URL:
-https://countly.green.we.nonprod.kubeit-int.dnv.com
-
-APP_KEY:
-cdeae8.....32a802
-
----
-
-IMPORTANT CONSTRAINTS:
-
-* Do NOT modify backend code
-* Do NOT add unnecessary libraries
-* Use ONLY "countly-sdk-web"
-* Keep implementation simple and production-safe
-* Avoid multiple initializations
-* Use React best practices (useEffect, etc.)
-
----
-
-FRONTEND REQUIREMENTS:
-
-1. Install Countly SDK:
-
-npm install countly-sdk-web
-
----
-
-2. Initialize Countly ONLY ONCE when the app loads
-
-* Do this in a top-level component (App.jsx or main.jsx)
-* Use useEffect with empty dependency array
-
-Example behavior:
-
-* Initialize Countly
-* Start session tracking
-* Track initial page view
-
----
-
-3. Track page views:
-
-* Automatically track when the app loads
-* Additionally, track specific pages like:
-
-  * Dashboard
-  * TalkCustomer (voice session page)
-
----
-
-4. Track custom events:
-
-Add event tracking for:
-
-* When user starts a session
-  event key: "session_started"
-
-* When user ends a session
-  event key: "session_ended"
-
-These should be triggered from the existing TalkCustomer.jsx component:
-
-* startSession() → trigger "session_started"
-* endSession() → trigger "session_ended"
-
----
-
-5. Ensure:
-
-* Countly is not initialized multiple times
-* No console errors
-* Works even if user navigates between pages
-* Does not break existing functionality
-
----
-
-EXPECTED OUTPUT:
-
-Provide:
-
-1. Exact code for Countly initialization (App.jsx or main.jsx)
-2. Code snippet for tracking page views
-3. Modifications required in TalkCustomer.jsx for event tracking
-4. Required imports
-5. Clean and minimal implementation
-
-Do NOT include long explanations.
-
-Focus on correct, production-ready code that can be directly pasted.
-
----
-
-OPTIONAL (if easy):
-
-Track which page user is on using:
-Countly.track_pageview("PageName")
-
----
+                "IMPORTANT:\n"
+                "- All scores must be integers between 0 and 10.\n"
+                "- Most conversations should fall between 2–6 unless truly excellent.\n"
+                "- If major issues exist, scores MUST be low.\n"
+            ),
+        },
+        {"role": "user", "content": transcript_text},
+    ],
+    "temperature": 0.2,
+    "max_tokens": 800,
+}
